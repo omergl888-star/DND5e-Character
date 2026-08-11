@@ -590,17 +590,21 @@
 
   function stepErrors() {
     readVisibleDraft();
-    if (draft.step === 1 && !draft.name) return ["Enter a character name."];
-    if (draft.step === 2 && ABILITIES.some(key => draft.build.baseAbilities[key] < 1 || draft.build.baseAbilities[key] > 20)) return ["Ability Scores must be between 1 and 20."];
+    if (draft.step === 1) return draft.name ? [] : ["Enter a character name."];
+    if (draft.step === 2) return ABILITIES.some(key => draft.build.baseAbilities[key] < 1 || draft.build.baseAbilities[key] > 20)
+      ? ["Ability Scores must be between 1 and 20."]
+      : [];
     if (draft.step === 3) {
       const race = rules.get("races", draft.build.raceId);
       if (!race) return ["Choose an enabled race."];
       if (race.subraces?.length && !draft.build.subraceId) return ["Choose a subrace."];
+      return [];
     }
     if (draft.step === 4) return validateRaceOnly();
     if (draft.step === 5) return validateClassOnly(false);
     if (draft.step === 6) return validateClassOnly(true);
-    return stateApi.validateBuild(draft.build);
+    if (draft.step === 7) return stateApi.validateBuild(draft.build);
+    return [];
   }
 
   function showErrors(errors) {
