@@ -215,7 +215,7 @@
   }
 
   function logo() {
-    return `<div class="v1001-logo"><div class="v1001-logo-rings"><span>CH</span></div><div><b>Character Hub</b><small>V11 · 2014 RULES</small></div></div>`;
+    return `<div class="v1001-logo"><div class="v1001-logo-rings"><span>CH</span></div><div><b>Character Hub</b><small>V11.0.2 · 2014 RULES</small></div></div>`;
   }
 
   function launcherFrame(content, { back = false, close = false } = {}) {

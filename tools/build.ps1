@@ -18,23 +18,25 @@ $bundleState = @{ Styles = 0; Scripts = 0 }
 $stylePattern = [regex]'<link\s+rel="stylesheet"\s+href="(?<path>[^"]+)"\s+data-bundle\s*>'
 $html = $stylePattern.Replace($html, {
     param($match)
-    $relativePath = $match.Groups['path'].Value
+    $referencePath = $match.Groups['path'].Value
+    $relativePath = ($referencePath -split '\?', 2)[0]
     $sourcePath = Join-Path $ProjectRoot ($relativePath -replace '/', '\')
-    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Missing style sheet: $relativePath" }
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Missing style sheet: $referencePath" }
     $content = [IO.File]::ReadAllText($sourcePath)
     $bundleState.Styles++
-    return "<style data-source=`"$relativePath`">`r`n$content`r`n</style>"
+    return "<style data-source=`"$referencePath`">`r`n$content`r`n</style>"
 })
 
 $scriptPattern = [regex]'<script\s+src="(?<path>[^"]+)"\s+data-bundle\s*>\s*</script>'
 $html = $scriptPattern.Replace($html, {
     param($match)
-    $relativePath = $match.Groups['path'].Value
+    $referencePath = $match.Groups['path'].Value
+    $relativePath = ($referencePath -split '\?', 2)[0]
     $sourcePath = Join-Path $ProjectRoot ($relativePath -replace '/', '\')
-    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Missing script: $relativePath" }
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Missing script: $referencePath" }
     $content = [IO.File]::ReadAllText($sourcePath) -replace '(?i)</script', '<\/script'
     $bundleState.Scripts++
-    return "<script data-source=`"$relativePath`">`r`n$content`r`n</script>"
+    return "<script data-source=`"$referencePath`">`r`n$content`r`n</script>"
 })
 
 $assetPattern = [regex]'(?<![A-Za-z0-9_-])(?:\./)?assets/(?<path>[A-Za-z0-9_./-]+\.(?<extension>png|jpg|jpeg|webp|gif))'

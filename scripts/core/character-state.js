@@ -5043,7 +5043,11 @@ render();
 startLocalizationObserver();
 localizeDocument(document.body);
 initNaturalAbilityCarousel();
-if("serviceWorker" in navigator){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }
+if("serviceWorker" in navigator&&location.protocol!=="file:"){
+  navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"})
+    .then(registration=>registration.update())
+    .catch(()=>{});
+}
 
 // v9.10.2 focused Combat workspace behavior
 (function(){
