@@ -3,7 +3,7 @@
 
   const hub = global.CharacterHub = global.CharacterHub || {};
   const STATUS = new Set(["coverage", "verified", "enabled"]);
-  const KINDS = ["races", "classes", "subclasses", "features", "spells"];
+  const KINDS = ["races", "classes", "subclasses", "features", "spells", "backgrounds"];
   const catalog = hub.rules?.catalog || Object.fromEntries(KINDS.map(kind => [kind, Object.create(null)]));
   const rules = hub.rules = Object.assign(hub.rules || {}, { catalog });
 
@@ -54,7 +54,17 @@
     }
   };
 
+  rules.upsert = function upsert(kind, definitions) {
+    if (!KINDS.includes(kind)) throw new Error(`Unknown catalog kind: ${kind}`);
+    const list = Array.isArray(definitions) ? definitions : [definitions];
+    for (const definition of list) {
+      delete catalog[kind][definition?.id];
+      rules.register(kind, definition);
+    }
+  };
+
   rules.get = (kind, id) => catalog[kind]?.[id] || null;
+  rules.remove = (kind, id) => { if (catalog[kind]) delete catalog[kind][id]; };
   rules.list = (kind, status = "enabled") => Object.values(catalog[kind] || {}).filter(item => !status || item.status === status);
   rules.validateCatalog = function validateCatalog() {
     const errors = [];

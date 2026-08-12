@@ -1187,7 +1187,8 @@ function skillTotal(def){
   const ability=state.abilities[def.ability][1];
   const status=state.skillProficiencies?.[def.key] || "none";
   const multiplier=status==="expertise"?2:status==="proficient"?1:0;
-  return ability + state.proficiency*multiplier;
+  const jackOfAllTrades=status==="none"&&(state.traits||[]).some(trait=>String(trait.name||"").replace(/\s*\([^)]*\)\s*/g,"").trim()==="Jack of All Trades")?Math.floor(Number(state.proficiency||0)/2):0;
+  return ability + state.proficiency*multiplier + jackOfAllTrades;
 }
 function saveTotal(def){
   const override=state.saveOverrides?.[def.key];

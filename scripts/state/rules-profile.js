@@ -42,7 +42,7 @@
       const classId = matchCatalogId("classes", character.className);
       const legacyChoices = legacyRace.choices || {};
       character.characterBuild = {
-        version: 1,
+        version: 2,
         baseAbilities: Object.fromEntries(abilities.map(key => [key, Number(baseAbilities[key]) || 10])),
         raceId,
         subraceId: "",
@@ -51,13 +51,20 @@
           "bonus-languages": [legacyChoices.language].filter(Boolean),
           "skill-versatility": [legacyChoices.skill1, legacyChoices.skill2].filter(Boolean)
         },
+        backgroundId: matchCatalogId("backgrounds", character.v911?.background || ""),
+        backgroundChoices: {},
         classId,
         classChoices: {
           "class-skills": Object.entries(character.skillProficiencies || {}).filter(([, status]) => status !== "none").map(([id]) => id)
         },
-        equipmentPackageId: ""
+        subclassId: matchCatalogId("subclasses", character.subclass),
+        equipmentPackageId: "",
+        spellChoices: { cantrips: [], known: [], spellbook: [], prepared: [] }
       };
     }
+    character.characterBuild.version = Math.max(2, Number(character.characterBuild.version) || 1);
+    character.characterBuild.backgroundChoices ||= {};
+    character.characterBuild.spellChoices ||= { cantrips: [], known: [], spellbook: [], prepared: [] };
     return character;
   }
 
@@ -72,9 +79,13 @@
       ...race,
       displayName: subrace?.name || race.name,
       selectedSubrace: subrace,
+      size: { ...(race.size || {}), ...(subrace?.size || {}) },
+      speed: { ...(race.speed || {}), ...(subrace?.speed || {}) },
+      senses: { ...(race.senses || {}), ...(subrace?.senses || {}) },
       abilityBonuses: {
         fixed: Object.fromEntries(abilities.map(key => [key, Number(race.abilityBonuses?.fixed?.[key] || 0) + Number(subrace?.abilityBonuses?.fixed?.[key] || 0)])),
-        choices: mergeChoiceGroups(race.abilityBonuses?.choices, subrace?.abilityBonuses?.choices)
+        choices: mergeChoiceGroups(race.abilityBonuses?.choices, subrace?.abilityBonuses?.choices),
+        patterns: mergeChoiceGroups(race.abilityBonuses?.patterns, subrace?.abilityBonuses?.patterns)
       },
       languages: {
         fixed: mergeArray(race.languages?.fixed, subrace?.languages?.fixed),
@@ -107,6 +118,11 @@
     const race = mergeRace(hub.rules.get("races", build.raceId), build.subraceId);
     if (!race) return null;
     const bonuses = { ...race.abilityBonuses.fixed };
+    const patterns = race.abilityBonuses.patterns || [];
+    const selectedPattern = patterns.find(pattern => pattern.id === build.raceChoices?.["ability-pattern"]) || patterns[0];
+    for (const allocation of selectedPattern?.allocations || []) {
+      for (const ability of selectedValues(build.raceChoices, allocation.id)) bonuses[ability] = Number(bonuses[ability] || 0) + Number(allocation.amount || 0);
+    }
     for (const choice of race.abilityBonuses.choices || []) {
       for (const ability of selectedValues(build.raceChoices, choice.id)) bonuses[ability] = Number(bonuses[ability] || 0) + Number(choice.amount || 0);
     }
@@ -144,6 +160,16 @@
   function resolveClass(build, profile, finalAbilities) {
     const classDefinition = hub.rules.get("classes", build.classId);
     if (!classDefinition) return null;
+    const selectedSubclass = hub.rules.get("subclasses", build.subclassId);
+    const subclassName = selectedSubclass?.name || "";
+    const subclassArmor = [];
+    const subclassWeapons = [];
+    const subclassTools = [];
+    if (["Life Domain", "Forge Domain", "Nature Domain", "Order Domain"].includes(subclassName)) subclassArmor.push("Heavy Armor");
+    if (["Tempest Domain", "Twilight Domain", "War Domain"].includes(subclassName)) { subclassArmor.push("Heavy Armor"); subclassWeapons.push("Martial Weapons"); }
+    if (subclassName === "Death Domain") subclassWeapons.push("Martial Weapons");
+    if (subclassName === "Forge Domain") subclassTools.push("Smith's Tools");
+    if (subclassName === "Hexblade") { subclassArmor.push("Medium Armor", "Shields"); subclassWeapons.push("Martial Weapons"); }
     const modeOverrides = profile.mode === "manual" ? profile.overrides || {} : {};
     const classSkills = selectedValues(build.classChoices, "class-skills");
     const toolChoices = (classDefinition.proficiencies.tools?.choices || []).flatMap(choice => selectedValues(build.classChoices, choice.id));
@@ -160,15 +186,38 @@
       name: classDefinition.name,
       hitDie: Number(modeOverrides.hitDie || classDefinition.hitDie),
       savingThrows: modeOverrides.savingThrows || classDefinition.savingThrows,
-      armor: modeOverrides.classArmorProficiencies || classDefinition.proficiencies.armor,
-      weapons: modeOverrides.classWeaponProficiencies || classDefinition.proficiencies.weapons,
-      tools: modeOverrides.classToolProficiencies || [...(classDefinition.proficiencies.tools?.fixed || []), ...toolChoices],
+      armor: modeOverrides.classArmorProficiencies || [...new Set([...classDefinition.proficiencies.armor, ...subclassArmor])],
+      weapons: modeOverrides.classWeaponProficiencies || [...new Set([...classDefinition.proficiencies.weapons, ...subclassWeapons])],
+      tools: modeOverrides.classToolProficiencies || [...new Set([...(classDefinition.proficiencies.tools?.fixed || []), ...toolChoices, ...subclassTools])],
       skills: modeOverrides.classSkills || classSkills,
       features: filteredFeatures,
       equipmentPackage: selectedPackage,
       spellcasting,
       subclass: classDefinition.subclass,
       abilityModifiers: Object.fromEntries(abilities.map(key => [key, Math.floor((Number(finalAbilities?.[key] || 10) - 10) / 2)]))
+    };
+  }
+
+  function resolveBackground(build) {
+    const definition = hub.rules.get("backgrounds", build.backgroundId);
+    if (!definition) return null;
+    const languageChoice = definition.languages?.choices;
+    const languages = [
+      ...(definition.languages?.fixed || []),
+      ...(languageChoice ? selectedValues(build.backgroundChoices, languageChoice.id) : [])
+    ];
+    const skillChoices = Array.isArray(definition.skills?.choices) ? definition.skills.choices : definition.skills?.choices ? [definition.skills.choices] : [];
+    const selectedSkills = skillChoices.flatMap(choice => selectedValues(build.backgroundChoices, choice.id));
+    const chosenTools = selectedValues(build.backgroundChoices, "background-tools");
+    const fixedTools = !definition.tools || definition.tools === "None" || /choice|choose|one type|two proficiencies/i.test(definition.tools) ? [] : String(definition.tools).split(",").map(value => value.trim()).filter(Boolean);
+    return {
+      definition,
+      name: definition.name,
+      skills: [...new Set([...(definition.skills?.fixed || []), ...selectedSkills])],
+      languages: [...new Set(languages)],
+      tools: [...new Set([...fixedTools, ...chosenTools])],
+      feature: definition.feature || null,
+      equipment: definition.equipment || ""
     };
   }
 
@@ -197,13 +246,46 @@
           if (values.some(value => !valid.has(String(value)))) errors.push(`${choice.label}: contains an unavailable choice.`);
         }
       }
+      const patterns = race.abilityBonuses.patterns || [];
+      if (patterns.length) {
+        const pattern = patterns.find(item => item.id === build.raceChoices?.["ability-pattern"]);
+        if (!pattern) errors.push("Choose an Ability Score increase pattern.");
+        else {
+          const allAbilities = [];
+          for (const allocation of pattern.allocations || []) {
+            const values = selectedValues(build.raceChoices, allocation.id);
+            if (values.length !== Number(allocation.count || 1)) errors.push(`${pattern.label}: choose ${allocation.count || 1} Ability Score${Number(allocation.count || 1) === 1 ? "" : "s"} for +${allocation.amount}.`);
+            allAbilities.push(...values);
+          }
+          if (new Set(allAbilities).size !== allAbilities.length) errors.push("Flexible Ability Score increases must use different scores.");
+        }
+      }
+    }
+    const background = hub.rules.get("backgrounds", build.backgroundId);
+    if (!background) errors.push("Choose an enabled background.");
+    if (background) {
+      const groups = [
+        ...(Array.isArray(background.skills?.choices) ? background.skills.choices : background.skills?.choices ? [background.skills.choices] : []),
+        ...(background.languages?.choices ? [background.languages.choices] : [])
+      ];
+      for (const choice of groups) {
+        const values = selectedValues(build.backgroundChoices, choice.id);
+        if (values.length !== Number(choice.count || 1)) errors.push(`${choice.label}: choose ${choice.count || 1}.`);
+        if (choice.distinct && new Set(values).size !== values.length) errors.push(`${choice.label}: choices must be different.`);
+      }
+      if (/choice|choose|one type|two proficiencies/i.test(background.tools || "") && !selectedValues(build.backgroundChoices, "background-tools").length) errors.push("Enter your background tool proficiency choice.");
     }
     if (!classDefinition) errors.push("Choose an enabled class.");
     if (classDefinition) {
       const selectedSkills = selectedValues(build.classChoices, "class-skills");
+      const resolvedRace = resolveRace(build, emptyRulesProfile());
+      const resolvedBackground = resolveBackground(build);
+      const occupiedSkills = [...new Set([...(resolvedRace?.skills || []), ...(resolvedBackground?.skills || [])])];
+      const duplicateGrant = classDefinition.proficiencies.skills.options.some(value => occupiedSkills.includes(value));
+      const availableClassSkills = (duplicateGrant ? skills.map(([id]) => id) : classDefinition.proficiencies.skills.options).filter(value => !occupiedSkills.includes(value));
       if (selectedSkills.length !== classDefinition.proficiencies.skills.count) errors.push(`Class skills: choose ${classDefinition.proficiencies.skills.count}.`);
       if (new Set(selectedSkills).size !== selectedSkills.length) errors.push("Class skills must be different.");
-      if (selectedSkills.some(value => !classDefinition.proficiencies.skills.options.includes(value))) errors.push("Class skills contain an unavailable choice.");
+      if (selectedSkills.some(value => !availableClassSkills.includes(value))) errors.push("Class skills contain an unavailable choice.");
       for (const choice of [...(classDefinition.proficiencies.tools?.choices || []), ...(classDefinition.choices || [])]) {
         const values = selectedValues(build.classChoices, choice.id);
         if (values.length !== Number(choice.count || 1)) errors.push(`${choice.label}: choose ${choice.count || 1}.`);
@@ -231,6 +313,7 @@
   stateApi.mergeRace = mergeRace;
   stateApi.resolveRace = resolveRace;
   stateApi.resolveClass = resolveClass;
+  stateApi.resolveBackground = resolveBackground;
   stateApi.validateBuild = validateBuild;
   stateApi.selectedValues = selectedValues;
   stateApi.migrateCharacter(typeof state !== "undefined" ? state : null);

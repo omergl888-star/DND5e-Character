@@ -286,7 +286,7 @@
   function passiveStat(icon,label,value){return `<div class="v911-passive-stat"><span style="font-size:24px">${icon}</span><span>${label}<b>${e(value)}</b></span></div>`;}
 
   function featsHtml(){
-    const traits=filteredTraits();const groups=["Class Feature","Feat","Racial Trait","Subclass Feature","Homebrew","Other"];
+    const traits=filteredTraits();const groups=["Class Feature","Subclass Feature","Racial Trait","Background Feature","Feat","Homebrew","Other"];
     const resources=state.resources.map((resource,index)=>({resource,index})).filter(({resource})=>resource.systemKey!=="hitDice"&&resource.max>0);
     const counts={class:state.traits.filter(t=>t.category==="Class Feature").length,feats:state.traits.filter(t=>t.category==="Feat").length,race:state.traits.filter(t=>t.category==="Racial Trait").length,active:resources.length};
     return `${pageHead("Feats & Features",`<button class="v911-btn primary" data-action="add-feature">＋ Add Feature</button>`)}
@@ -450,11 +450,24 @@
     const linked=traitLinkedResource(trait);const source=[trait.sourceName||trait.sourceType,trait.activation].filter(Boolean).join(" · ");const description=featureText[trait.name]||trait.shortDesc||trait.description||"Feature details are available.";const resourceIndex=linked?state.resources.indexOf(linked):-1;
     return `<div class="v911-feature-row">${art(traitArtKey(trait),"v911-feature-art",trait.name)}<b class="v911-feature-name">${e(trait.name)}</b><span>${e(source)}</span><span class="v911-feature-desc">${e(description)}</span><span class="v911-feature-actions">${linked?`<span class="v911-badge green">${linked.current}/${linked.max}</span><button class="v911-btn small" data-action="resource-use" data-index="${resourceIndex}" ${linked.current<linked.useCost?"disabled":""}>Use</button>`:""}</span><button class="v911-icon-btn" data-action="feat-details" data-index="${index}" aria-label="View ${attr(trait.name)} details">›</button></div>`;
   };
+  function levelHistoryHtml(){
+    const entries=state.progression?.levelHistory||[];
+    const source=entry=>(entry.sources||[]).map(item=>item?.url?`<a class="v111-source ${item.type==="community-reference"?"community":"official"}" href="${attr(item.url)}" target="_blank" rel="noopener noreferrer">${item.type==="community-reference"?"Community Reference":"Official Source"} ↗</a>`:"").join("");
+    const content=entries.length?entries.map(entry=>`<details class="v111-history-entry"><summary><span><b>Level ${entry.toLevel}</b><small>${e(new Date(entry.createdAt).toLocaleString("en"))}</small></span><strong>HP +${entry.hpGain}</strong></summary><div class="v111-history-body"><div><h4>Automatic updates</h4>${(entry.automaticChanges||[]).map(change=>`<p><span>${e(change.label)}</span><b>${e(change.before)} → ${e(change.after)}</b></p>`).join("")||"<p>No numerical changes.</p>"}</div><div><h4>Features and choices</h4>${[...(entry.grants||[]).map(item=>({label:item.name,value:item.kind})),...(entry.choices||[])].map(item=>`<p><span>${e(item.label)}</span><b>${e(item.value)}</b></p>`).join("")||"<p>No additional choices.</p>"}</div><div class="v111-history-sources">${source(entry)}</div></div></details>`).join(""):`<div class="v911-empty">No level-ups have been applied yet. Each completed Level Up will appear here automatically.</div>`;
+    return `<section class="v911-card v911-more-card v111-history-card" id="v911-more-level-history"><div class="v111-history-heading"><div><small>AUTOMATIC RECORD</small><h3>Level History</h3><p>This rules log is kept separate from Character Notes.</p></div><span>${entries.length} ${entries.length===1?"entry":"entries"}</span></div>${content}</section>`;
+  }
   moreHtml = function(){
     const v=state.v911,c=v.campaign;
     return `${pageHead("More")}<div class="v911-more-tabs">${["Character Details","Notes","Campaign","Data & Settings"].map(tab=>`<button class="v911-more-tab ${moreTab===tab?"active":""}" data-more-tab="${tab}">${tab}</button>`).join("")}</div><div class="v911-more-grid"><div class="v911-more-column"><section class="v911-card v911-more-card" id="v911-more-character"><h3>Character Details</h3><div class="v911-profile-block"><img src="${attr(portraitSrc())}" alt="${attr(state.name)}"><div><dl class="v911-details"><dt>Name</dt><dd>${e(state.name)}</dd><dt>Race</dt><dd>${e(state.race)}</dd><dt>Class</dt><dd>${e(state.className)}</dd><dt>Level</dt><dd>${state.level}</dd><dt>Background</dt><dd>${e(v.background)}</dd><dt>Alignment</dt><dd>${e(v.alignment)}</dd></dl><button class="v911-btn primary" style="margin-top:12px" data-action="edit-character">Edit Character</button></div></div></section><section class="v911-card v911-more-card"><h3>Appearance & Story</h3><div class="v911-story-grid"><dl class="v911-details" style="grid-template-columns:65px 1fr"><dt>Age</dt><dd>${e(v.age)}</dd><dt>Height</dt><dd>${e(v.height)}</dd><dt>Eyes</dt><dd>${e(v.eyes)}</dd><dt>Hair</dt><dd>${e(v.hair)}</dd></dl><div class="v911-story-copy"><p><b>Ideals:</b><br>${e(v.ideals)}</p><p><b>Bonds:</b><br>${e(v.bonds)}</p></div></div><button class="v911-btn" data-action="edit-profile">Open Full Biography &rsaquo;</button></section></div><div class="v911-more-column"><section class="v911-card v911-more-card" id="v911-more-campaign"><h3>Campaign</h3><div class="v911-campaign-block">${art("campaignMap","v911-campaign-art","Campaign map")}<div><dl class="v911-details"><dt>Campaign</dt><dd>${e(c.name)}</dd><dt>Player</dt><dd>${e(c.player)}</dd><dt>Dungeon Master</dt><dd>${e(c.dm)}</dd><dt>Current Location</dt><dd>${e(c.location)}</dd><dt>Session</dt><dd>${e(c.session)}</dd><dt>Last Played</dt><dd>${e(c.lastPlayed)}</dd></dl><button class="v911-btn" style="margin-top:10px" data-action="edit-campaign">Open Campaign Notes &rsaquo;</button></div></div></section><section class="v911-card v911-more-card" id="v911-more-notes"><h3>Character Notes</h3>${v.notes.map(note=>`<div class="v911-list-row">${art("passiveBook","v911-row-art","")}<span>${e(note.text)}</span><button class="v911-icon-btn" data-action="delete-note" data-id="${attr(note.id)}">⋮</button></div>`).join("")}<button class="v911-btn primary" style="margin-top:11px" data-action="new-note">+ New Note</button></section><section class="v911-card v911-more-card" id="v911-more-data"><h3>Data & Settings</h3><div class="v911-data-actions"><button class="v911-btn" data-action="save-now">Save Now</button><button class="v911-btn" data-action="export">Export Character</button><button class="v911-btn" data-action="import">Import Character</button><button class="v911-btn" data-action="backup">Backup Data</button></div><div class="v911-settings-row"><button class="v911-btn danger" data-action="reset">Reset Character Data</button><span>English Only</span><span>Desktop Layout</span><span class="v911-status-pill">Auto-fit On</span></div></section></div></div><div class="v911-footer">Character Hub v10.0.1 &middot; Local data stored in this browser.</div>`;
   };
 
+  const moreHtmlBeforeLevelHistory=moreHtml;
+  moreHtml=function(){
+    return moreHtmlBeforeLevelHistory()
+      .replace(/(<button class="v911-more-tab [^"]*" data-more-tab="Campaign">)/,`<button class="v911-more-tab ${moreTab==="Level History"?"active":""}" data-more-tab="Level History">Level History</button>$1`)
+      .replace('<section class="v911-card v911-more-card" id="v911-more-data">',`${levelHistoryHtml()}<section class="v911-card v911-more-card" id="v911-more-data">`)
+      .replace("Character Hub v10.0.1","Character Hub v11.1.0");
+  };
   function pageHtml(){if(currentPage==="home")return homeHtml();if(currentPage==="combat")return combatHtml();if(currentPage==="inventory")return inventoryHtml();if(currentPage==="skills")return skillsHtml();if(currentPage==="feats")return featsHtml();return moreHtml();}
   function deathEmergencyActive(){const d=state.deathSaves||{};return state.hpCurrent===0&&!d.dead&&!d.stabilized;}
   function renderV911(){
@@ -465,7 +478,7 @@
     const active=document.activeElement;const activeId=active?.id;const selection=active&&"selectionStart" in active?[active.selectionStart,active.selectionEnd]:null;
     app.innerHTML=`${sidebarHtml()}<main class="v911-main"><div class="v911-canvas">${pageHtml()}</div></main><div class="v911-overlay" id="v911Overlay"><section class="v911-dialog"><header class="v911-dialog-head"><h2 id="v911DialogTitle"></h2><button class="v911-dialog-close" data-action="modal-close">×</button></header><div class="v911-dialog-body" id="v911DialogBody"></div></section></div>`;
     document.title=`${pageNames[currentPage]} · Character Hub v9.11`;
-    document.title=`${pageNames[currentPage]} · Character Hub v10.0.1`;
+    document.title=`${pageNames[currentPage]} · Character Hub v11.1.0`;
     if(deathEmergency)openDeathEmergency();
     else if(activeId){const next=document.getElementById(activeId);if(next){next.focus();if(selection&&next.setSelectionRange)next.setSelectionRange(selection[0],selection[1]);}}
   }
@@ -530,6 +543,8 @@
   });
   app.addEventListener("input",event=>{if(event.target.id==="v911InventorySearch"){inventorySearch=event.target.value;renderV911();}if(event.target.id==="v911FeatSearch"){featSearch=event.target.value;renderV911();}});
   app.addEventListener("click",event=>{if(event.target.id==="v911Overlay")closeDialog();});
+  app.addEventListener("click",event=>{if(event.target.closest('[data-more-tab="Level History"]'))setTimeout(()=>document.getElementById("v911-more-level-history")?.scrollIntoView({behavior:"smooth",block:"start"}),0);});
+  globalThis.addEventListener("characterhub:open-level-history",()=>{moreTab="Level History";currentPage="more";localStorage.setItem("characterHubV911Page","more");renderV911();setTimeout(()=>document.getElementById("v911-more-level-history")?.scrollIntoView({behavior:"smooth",block:"start"}),0);});
 
   ensureV911State();
   try{applyTheme(typeof themePreference!=="undefined"?themePreference:"system",{persist:false});applyLanguage("en",{persist:true,rerender:false});}catch(error){}

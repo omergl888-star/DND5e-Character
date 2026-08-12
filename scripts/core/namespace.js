@@ -2,8 +2,8 @@
   "use strict";
 
   const hub = global.CharacterHub = global.CharacterHub || {};
-  hub.version = "11.0.0";
-  hub.catalogVersion = 1;
+  hub.version = "11.1.0";
+  hub.catalogVersion = 2;
   hub.constants = Object.freeze({
     abilities: ["STR", "DEX", "CON", "INT", "WIS", "CHA"],
     abilityNames: {

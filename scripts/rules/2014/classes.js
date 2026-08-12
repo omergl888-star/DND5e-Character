@@ -6,6 +6,11 @@
     name: "SRD 5.1 (Creative Commons)",
     url: "https://media.wizards.com/2023/downloads/dnd/SRD_CC_v5.1.pdf"
   });
+  const EXPANDED_SOURCE = Object.freeze({
+    name: "Tasha's Cauldron of Everything (2014 rules)",
+    url: "https://dnd5e.wikidot.com/artificer",
+    type: "community-reference"
+  });
   const ALL_SKILLS = global.CharacterHub.constants.skills.map(([id]) => id);
   const base = { edition: "2014", source: SOURCE, status: "enabled" };
   const feature = (id, name, summary, mechanics = {}) => ({ id, name, summary, mechanics, edition: "2014", source: SOURCE, status: "enabled" });
@@ -26,6 +31,27 @@
   const subclass = (selectionLevel, srdOption, highlights) => ({ selectionLevel, srdOption, highlights });
 
   rules.register("classes", [
+    {
+      ...base, source: EXPANDED_SOURCE, id: "artificer", name: "Artificer", hitDie: 8, savingThrows: ["CON", "INT"],
+      proficiencies: {
+        armor: ["Light Armor", "Medium Armor", "Shields"], weapons: ["Simple Weapons"],
+        tools: {
+          fixed: ["Thieves' Tools", "Tinker's Tools"],
+          choices: [{ id: "artificer-artisan-tool", label: "Artisan's tool proficiency", type: "tool", count: 1, options: ["Alchemist's Supplies", "Brewer's Supplies", "Calligrapher's Supplies", "Carpenter's Tools", "Cartographer's Tools", "Cobbler's Tools", "Cook's Utensils", "Glassblower's Tools", "Jeweler's Tools", "Leatherworker's Tools", "Mason's Tools", "Painter's Supplies", "Potter's Tools", "Smith's Tools", "Weaver's Tools", "Woodcarver's Tools"] }]
+        },
+        skills: skillProficiency(2, ["arcana", "history", "investigation", "medicine", "nature", "perception", "sleightOfHand"])
+      },
+      level1Features: [
+        { ...feature("magical-tinkering", "Magical Tinkering", "Imbue tiny nonmagical objects with small persistent magical effects."), source: EXPANDED_SOURCE },
+        { ...feature("spellcasting-artificer", "Spellcasting", "Prepare artificer spells using Intelligence and tools as a spellcasting focus."), source: EXPANDED_SOURCE }
+      ],
+      equipmentPackages: [
+        pack("artificer-crossbow", "Light crossbow, scale mail, tools, and dungeoneer's pack", [weapon("Light Crossbow", "1d8", "Piercing", ["Ammunition", "Loading", "Two-Handed"], "Ranged", "80/320 ft.", 1, 5), general("Crossbow Bolts", 20), armor("Scale Mail", "Medium", 14, true, 2, 45), tool("Thieves' Tools"), tool("Tinker's Tools"), general("Dungeoneer's Pack")]),
+        pack("artificer-simple", "Simple weapon, scale mail, tools, and dungeoneer's pack", [weapon("Light Hammer", "1d4", "Bludgeoning", ["Light", "Thrown"], "Melee or Ranged", "20/60 ft.", 1, 2), armor("Scale Mail", "Medium", 14, true, 2, 45), tool("Thieves' Tools"), tool("Tinker's Tools"), general("Dungeoneer's Pack")])
+      ],
+      spellcasting: { startsAt: 1, ability: "INT", kind: "prepared", cantripsKnown: 2, preparedFormula: "INT modifier + half artificer level, rounded down (minimum 1)", level1Slots: 2, ritualCasting: true, focus: "Artisan's tools or thieves' tools" },
+      subclass: subclass(3, "Alchemist", ["Tool Proficiency", "Alchemist Spells", "Experimental Elixir", "Alchemical Savant", "Restorative Reagents", "Chemical Mastery"])
+    },
     {
       ...base, id: "barbarian", name: "Barbarian", hitDie: 12, savingThrows: ["STR", "CON"],
       proficiencies: { armor: ["Light Armor", "Medium Armor", "Shields"], weapons: ["Simple Weapons", "Martial Weapons"], tools: { fixed: [], choices: [] }, skills: skillProficiency(2, ["animalHandling", "athletics", "intimidation", "nature", "perception", "survival"]) },
@@ -51,8 +77,8 @@
     },
     {
       ...base, id: "cleric", name: "Cleric", hitDie: 8, savingThrows: ["WIS", "CHA"],
-      proficiencies: { armor: ["Light Armor", "Medium Armor", "Heavy Armor (Life Domain)", "Shields"], weapons: ["Simple Weapons"], tools: { fixed: [], choices: [] }, skills: skillProficiency(2, ["history", "insight", "medicine", "persuasion", "religion"]) },
-      level1Features: [feature("spellcasting-cleric", "Spellcasting", "Prepare and cast cleric spells using Wisdom."), feature("life-domain", "Divine Domain: Life", "The SRD domain grants heavy armor proficiency and improves healing magic.")],
+      proficiencies: { armor: ["Light Armor", "Medium Armor", "Shields"], weapons: ["Simple Weapons"], tools: { fixed: [], choices: [] }, skills: skillProficiency(2, ["history", "insight", "medicine", "persuasion", "religion"]) },
+      level1Features: [feature("spellcasting-cleric", "Spellcasting", "Prepare and cast cleric spells using Wisdom."), feature("divine-domain", "Divine Domain", "Choose a Cleric domain and gain its level 1 features.")],
       equipmentPackages: [
         pack("mace-scale", "Mace, scale mail, shield, and priest's pack", [weapon("Mace", "1d6", "Bludgeoning", [], "Melee", "5 ft.", 1, 4), armor("Scale Mail", "Medium", 14, true, 2, 45), shield(), weapon("Light Crossbow", "1d8", "Piercing", ["Ammunition", "Loading", "Two-Handed"], "Ranged", "80/320 ft.", 1, 5), general("Crossbow Bolts", 20), general("Priest's Pack"), focus("Holy Symbol")]),
         pack("mace-chain", "Mace, chain mail, shield, and explorer's pack", [weapon("Mace", "1d6", "Bludgeoning", [], "Melee", "5 ft.", 1, 4), armor("Chain Mail", "Heavy", 16, false, "", 55), shield(), weapon("Javelin", "1d6", "Piercing", ["Thrown"], "Melee or Ranged", "30/120 ft.", 2, 2), general("Explorer's Pack"), focus("Holy Symbol")])
@@ -136,7 +162,7 @@
     {
       ...base, id: "sorcerer", name: "Sorcerer", hitDie: 6, savingThrows: ["CON", "CHA"],
       proficiencies: { armor: [], weapons: ["Daggers", "Darts", "Slings", "Quarterstaffs", "Light Crossbows"], tools: { fixed: [], choices: [] }, skills: skillProficiency(2, ["arcana", "deception", "insight", "intimidation", "persuasion", "religion"]) },
-      level1Features: [feature("spellcasting-sorcerer", "Spellcasting", "Know and cast sorcerer spells using Charisma."), feature("draconic-bloodline", "Sorcerous Origin: Draconic Bloodline", "Choose a dragon ancestor; gain Draconic language, extra HP, and unarmored AC 13 + Dexterity.", { armorFormula: "13+DEX", hpPerLevel: 1 })],
+      level1Features: [feature("spellcasting-sorcerer", "Spellcasting", "Know and cast sorcerer spells using Charisma."), feature("sorcerous-origin", "Sorcerous Origin", "Choose a Sorcerous Origin and gain its level 1 features.")],
       equipmentPackages: [
         pack("crossbow-focus", "Light crossbow, arcane focus, and dungeoneer's pack", [weapon("Light Crossbow", "1d8", "Piercing", ["Ammunition", "Loading", "Two-Handed"], "Ranged", "80/320 ft.", 1, 5), general("Crossbow Bolts", 20), weapon("Dagger", "1d4", "Piercing", ["Finesse", "Light", "Thrown"], "Melee or Ranged", "20/60 ft.", 2, 1), focus("Arcane Focus"), general("Dungeoneer's Pack")]),
         pack("daggers-pouch", "Daggers, component pouch, and explorer's pack", [weapon("Dagger", "1d4", "Piercing", ["Finesse", "Light", "Thrown"], "Melee or Ranged", "20/60 ft.", 2, 1), focus("Component Pouch"), general("Explorer's Pack")])
@@ -147,7 +173,7 @@
     {
       ...base, id: "warlock", name: "Warlock", hitDie: 8, savingThrows: ["WIS", "CHA"],
       proficiencies: { armor: ["Light Armor"], weapons: ["Simple Weapons"], tools: { fixed: [], choices: [] }, skills: skillProficiency(2, ["arcana", "deception", "history", "intimidation", "investigation", "nature", "religion"]) },
-      level1Features: [feature("fiend-patron", "Otherworldly Patron: The Fiend", "Gain temporary HP after reducing a hostile creature to 0 HP."), feature("pact-magic", "Pact Magic", "Know and cast warlock spells using Charisma; slots return on a short rest.")],
+      level1Features: [feature("otherworldly-patron", "Otherworldly Patron", "Choose a patron and gain its level 1 features."), feature("pact-magic", "Pact Magic", "Know and cast warlock spells using Charisma; slots return on a short rest.")],
       equipmentPackages: [
         pack("crossbow-pouch", "Light crossbow, component pouch, and scholar's pack", [weapon("Light Crossbow", "1d8", "Piercing", ["Ammunition", "Loading", "Two-Handed"], "Ranged", "80/320 ft.", 1, 5), general("Crossbow Bolts", 20), armor("Leather Armor", "Light", 11, true, "", 10), weapon("Dagger", "1d4", "Piercing", ["Finesse", "Light", "Thrown"], "Melee or Ranged", "20/60 ft.", 2, 1), focus("Component Pouch"), general("Scholar's Pack")]),
         pack("mace-focus", "Mace, arcane focus, and dungeoneer's pack", [weapon("Mace", "1d6", "Bludgeoning", [], "Melee", "5 ft.", 1, 4), armor("Leather Armor", "Light", 11, true, "", 10), weapon("Dagger", "1d4", "Piercing", ["Finesse", "Light", "Thrown"], "Melee or Ranged", "20/60 ft.", 2, 1), focus("Arcane Focus"), general("Dungeoneer's Pack")])

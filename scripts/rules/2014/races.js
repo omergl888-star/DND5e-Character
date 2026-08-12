@@ -31,6 +31,10 @@
       subraces: [{
         ...base, id: "hill-dwarf", name: "Hill Dwarf", abilityBonuses: { fixed: { WIS: 1 }, choices: [] },
         traits: [trait("dwarven-toughness", "Dwarven Toughness", "Maximum HP increases by 1 at each character level.", { hpPerLevel: 1 })]
+      }, {
+        ...base, id: "mountain-dwarf", name: "Mountain Dwarf", abilityBonuses: { fixed: { STR: 2 }, choices: [] },
+        proficiencies: { armor: ["Light Armor", "Medium Armor"] },
+        traits: [trait("dwarven-armor-training", "Dwarven Armor Training", "Gain proficiency with light and medium armor.")]
       }]
     },
     {
@@ -53,6 +57,14 @@
           options: ["Acid Splash", "Chill Touch", "Dancing Lights", "Fire Bolt", "Light", "Mage Hand", "Mending", "Message", "Minor Illusion", "Poison Spray", "Prestidigitation", "Ray of Frost", "Shocking Grasp", "True Strike"]
         }],
         traits: [trait("elf-weapon-training", "Elf Weapon Training", "Proficiency with longsword, shortsword, shortbow, and longbow."), trait("cantrip", "Cantrip", "Know one wizard cantrip; Intelligence is its spellcasting ability.")]
+      }, {
+        ...base, id: "wood-elf", name: "Wood Elf", abilityBonuses: { fixed: { WIS: 1 }, choices: [] }, speed: { walk: 35 },
+        proficiencies: { weapons: ["Longsword", "Shortsword", "Shortbow", "Longbow"] },
+        traits: [trait("elf-weapon-training", "Elf Weapon Training", "Gain proficiency with longsword, shortsword, shortbow, and longbow."), trait("fleet-of-foot", "Fleet of Foot", "Your walking speed is 35 feet."), trait("mask-of-the-wild", "Mask of the Wild", "Hide while lightly obscured by natural phenomena.")]
+      }, {
+        ...base, id: "drow", name: "Drow", abilityBonuses: { fixed: { CHA: 1 }, choices: [] }, senses: { darkvision: 120 },
+        proficiencies: { weapons: ["Rapier", "Shortsword", "Hand Crossbow"] },
+        traits: [trait("superior-darkvision", "Superior Darkvision", "See in darkness out to 120 feet."), trait("sunlight-sensitivity", "Sunlight Sensitivity", "Direct sunlight hinders sight-based attack rolls and Perception checks."), trait("drow-magic", "Drow Magic", "Know dancing lights; gain faerie fire at 3rd level and darkness at 5th level using Charisma."), trait("drow-weapon-training", "Drow Weapon Training", "Gain proficiency with rapiers, shortswords, and hand crossbows.")]
       }]
     },
     {
@@ -69,6 +81,9 @@
       subraces: [{
         ...base, id: "lightfoot", name: "Lightfoot Halfling", abilityBonuses: { fixed: { CHA: 1 }, choices: [] },
         traits: [trait("naturally-stealthy", "Naturally Stealthy", "Can attempt to hide behind a creature at least one size larger.")]
+      }, {
+        ...base, id: "stout", name: "Stout Halfling", abilityBonuses: { fixed: { CON: 1 }, choices: [] },
+        traits: [trait("stout-resilience", "Stout Resilience", "Gain advantage on saves against poison and resistance to poison damage.")]
       }]
     },
     {
@@ -121,6 +136,9 @@
           trait("artificers-lore", "Artificer's Lore", "Double proficiency on History checks about magic items, alchemy, or technology."),
           trait("tinker", "Tinker", "Use tinker's tools to build a Tiny clockwork device.")
         ]
+      }, {
+        ...base, id: "forest-gnome", name: "Forest Gnome", abilityBonuses: { fixed: { DEX: 1 }, choices: [] },
+        traits: [trait("natural-illusionist", "Natural Illusionist", "Know minor illusion using Intelligence."), trait("speak-with-small-beasts", "Speak with Small Beasts", "Communicate simple ideas with Small or smaller beasts.")]
       }]
     },
     {
