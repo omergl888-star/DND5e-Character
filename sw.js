@@ -1,4 +1,4 @@
-const CACHE_NAME = "character-hub-v11-1-0";
+const CACHE_NAME = "character-hub-v12-0-0";
 const OLD_CACHE_PREFIXES = ["character-hub-", "dnd-5e-binder-"];
 
 self.addEventListener("install", event => {

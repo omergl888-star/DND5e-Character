@@ -466,7 +466,7 @@
     return moreHtmlBeforeLevelHistory()
       .replace(/(<button class="v911-more-tab [^"]*" data-more-tab="Campaign">)/,`<button class="v911-more-tab ${moreTab==="Level History"?"active":""}" data-more-tab="Level History">Level History</button>$1`)
       .replace('<section class="v911-card v911-more-card" id="v911-more-data">',`${levelHistoryHtml()}<section class="v911-card v911-more-card" id="v911-more-data">`)
-      .replace("Character Hub v10.0.1","Character Hub v11.1.0");
+      .replace("Character Hub v10.0.1","Character Hub v12.0.0");
   };
   function pageHtml(){if(currentPage==="home")return homeHtml();if(currentPage==="combat")return combatHtml();if(currentPage==="inventory")return inventoryHtml();if(currentPage==="skills")return skillsHtml();if(currentPage==="feats")return featsHtml();return moreHtml();}
   function deathEmergencyActive(){const d=state.deathSaves||{};return state.hpCurrent===0&&!d.dead&&!d.stabilized;}
@@ -478,7 +478,7 @@
     const active=document.activeElement;const activeId=active?.id;const selection=active&&"selectionStart" in active?[active.selectionStart,active.selectionEnd]:null;
     app.innerHTML=`${sidebarHtml()}<main class="v911-main"><div class="v911-canvas">${pageHtml()}</div></main><div class="v911-overlay" id="v911Overlay"><section class="v911-dialog"><header class="v911-dialog-head"><h2 id="v911DialogTitle"></h2><button class="v911-dialog-close" data-action="modal-close">×</button></header><div class="v911-dialog-body" id="v911DialogBody"></div></section></div>`;
     document.title=`${pageNames[currentPage]} · Character Hub v9.11`;
-    document.title=`${pageNames[currentPage]} · Character Hub v11.1.0`;
+    document.title=`${pageNames[currentPage]} · Character Hub v12.0.0`;
     if(deathEmergency)openDeathEmergency();
     else if(activeId){const next=document.getElementById(activeId);if(next){next.focus();if(selection&&next.setSelectionRange)next.setSelectionRange(selection[0],selection[1]);}}
   }

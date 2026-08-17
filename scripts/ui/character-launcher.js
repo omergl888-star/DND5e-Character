@@ -1,4 +1,4 @@
-/* Character Hub v11 — local character library and SRD 5.1 creation flow. */
+/* Character Hub v12 — cinematic local character library and SRD 5.1 creation flow. */
 (function initializeCharacterBuilder(global) {
   "use strict";
 
@@ -10,6 +10,7 @@
   const storage = hub.storage;
   const LIBRARY_KEY = storage.keys.library;
   const ACTIVE_KEY = storage.keys.activeCharacter;
+  const BUILDER_DRAFT_KEY = "characterHubBuilderDraftV1";
   const BUILD_STEPS = [
     ["Identity", "Name and portrait"],
     ["Abilities", "Scores before ancestry"],
@@ -22,6 +23,7 @@
   ];
   const skillName = id => id === "thieves-tools" ? "Thieves' Tools" : SKILLS.find(([key]) => key === id)?.[1] || id;
   const signed = value => Number(value) >= 0 ? `+${Number(value)}` : String(Number(value));
+  const modifierText = value => Number(value) > 0 ? `+${Number(value)}` : Number(value) < 0 ? String(Number(value)) : "0";
   const scoreModifier = score => Math.floor((Number(score) - 10) / 2);
   const option = (value, label, selected) => `<option value="${esc(value)}" ${String(value) === String(selected) ? "selected" : ""}>${esc(label)}</option>`;
   const unique = values => [...new Set((values || []).filter(value => String(value).trim()))];
@@ -32,23 +34,63 @@
   let draft = defaultDraft();
   let currentView = "start";
   let suppressLibrarySync = false;
+  let selectionPreview = { raceId: "", subraceId: "", backgroundId: "", classId: "" };
+  let confirmationKind = "";
+  let selectionSearch = { race: "", background: "", class: "" };
 
   function defaultBuild() {
-    const firstRace = rules.list("races")[0];
-    const firstBackground = rules.list("backgrounds")[0];
-    const firstClass = rules.list("classes")[0];
     return {
       version: 2,
       baseAbilities: { STR: 15, DEX: 14, CON: 13, INT: 12, WIS: 10, CHA: 8 },
-      raceId: firstRace?.id || "", subraceId: firstRace?.subraces?.[0]?.id || "", raceChoices: {},
-      backgroundId: firstBackground?.id || "", backgroundChoices: {},
-      classId: firstClass?.id || "", subclassId: "", classChoices: {}, equipmentPackageId: firstClass?.equipmentPackages?.[0]?.id || "",
+      raceId: "", subraceId: "", raceChoices: {},
+      backgroundId: "", backgroundChoices: {},
+      classId: "", subclassId: "", classChoices: {}, equipmentPackageId: "",
       spellChoices: { cantrips: [], known: [], spellbook: [], prepared: [] }
     };
   }
 
   function defaultDraft() {
-    return { step: 1, editing: false, originalRaceId: "", originalSubraceId: "", originalClassId: "", name: "", portraitImage: "", build: defaultBuild(), rulesProfile: stateApi.emptyRulesProfile() };
+    return { step: 1, editing: false, sourceCharacterId: "", originalRaceId: "", originalSubraceId: "", originalClassId: "", name: "", portraitImage: "", build: defaultBuild(), rulesProfile: stateApi.emptyRulesProfile() };
+  }
+
+  function resetTransientBuilderState() {
+    selectionPreview = { raceId: "", subraceId: "", backgroundId: "", classId: "" };
+    confirmationKind = "";
+    selectionSearch = { race: "", background: "", class: "" };
+  }
+
+  function normalizedStoredDraft(source) {
+    if (!source || source.version !== 1 || !source.draft?.build) return null;
+    const next = defaultDraft();
+    Object.assign(next, clone(source.draft));
+    next.build = { ...defaultBuild(), ...clone(source.draft.build) };
+    next.build.baseAbilities = { ...defaultBuild().baseAbilities, ...(source.draft.build.baseAbilities || {}) };
+    next.build.raceChoices ||= {};
+    next.build.backgroundChoices ||= {};
+    next.build.classChoices ||= {};
+    next.build.spellChoices = { cantrips: [], known: [], spellbook: [], prepared: [], ...(source.draft.build.spellChoices || {}) };
+    next.rulesProfile = clone(source.draft.rulesProfile || stateApi.emptyRulesProfile());
+    next.step = Math.max(1, Math.min(BUILD_STEPS.length, Number(next.step) || 1));
+    if (next.editing && next.sourceCharacterId && next.sourceCharacterId !== activeId()) return null;
+    return next;
+  }
+
+  function storedBuilderDraft() {
+    try { return normalizedStoredDraft(storage.readJson(BUILDER_DRAFT_KEY, null)); }
+    catch (error) { return null; }
+  }
+
+  function saveBuilderDraft() {
+    if (currentView !== "new") return false;
+    try {
+      return storage.writeJson(BUILDER_DRAFT_KEY, { version: 1, updatedAt: now(), draft: clone(draft) });
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function clearBuilderDraft() {
+    try { localStorage.removeItem(BUILDER_DRAFT_KEY); } catch (error) {}
   }
 
   function idFromName(kind, name) {
@@ -60,6 +102,7 @@
     stateApi.migrateCharacter(state);
     const next = defaultDraft();
     next.editing = true;
+    next.sourceCharacterId = activeId();
     next.name = String(state.name || "");
     next.portraitImage = String(state.portraitImage || "");
     next.build = clone(state.characterBuild || defaultBuild());
@@ -226,17 +269,19 @@
   }
 
   function logo() {
-    return `<div class="v1001-logo"><div class="v1001-logo-rings"><span>CH</span></div><div><b>Character Hub</b><small>V11.1.0 · 2014 RULES</small></div></div>`;
+    return `<div class="v1001-logo"><div class="v1001-logo-rings"><span>CH</span></div><div><b>Character Hub</b><small>V12.0.0 · 2014 RULES</small></div></div>`;
   }
 
   function launcherFrame(content, { back = false, close = false } = {}) {
-    return `<div class="v1001-shell"><header>${logo()}<div class="v1001-head-actions">${back ? '<button class="v1001-text-btn" data-v1001-action="start">← Main Menu</button>' : ""}${close ? '<button class="v1001-close" data-v1001-action="close" aria-label="Close character menu">×</button>' : ""}</div></header>${content}<footer><span>Local character library · <a href="https://media.wizards.com/2023/downloads/dnd/SRD_CC_v5.1.pdf" target="_blank" rel="noreferrer">SRD 5.1</a> licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a></span><span><button class="v1001-text-btn" data-v1001-action="import-content-pack">Import 2014 Content Pack</button> · English Only · Desktop Edition</span></footer></div>`;
+    return `<div class="v1001-shell"><header>${logo()}<div class="v1001-head-actions"><span class="v12-save-state"><i></i>Saved locally</span>${back ? '<button class="v1001-text-btn" data-v1001-action="start">← Main Menu</button>' : ""}${close ? '<button class="v1001-close" data-v1001-action="close" aria-label="Close character menu">×</button>' : ""}</div></header>${content}<footer><span>Local character library · <a href="https://media.wizards.com/2023/downloads/dnd/SRD_CC_v5.1.pdf" target="_blank" rel="noreferrer">SRD 5.1</a> licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a></span><span><button class="v1001-text-btn" data-v1001-action="import-content-pack">Import 2014 Content Pack</button> · English Only · Desktop Edition</span></footer></div>`;
   }
 
   function startHtml() {
     const library = ensureLibrary();
     const active = library.records.find(record => record.id === activeId());
-    return launcherFrame(`<main class="v1001-start"><div class="v1001-start-copy"><span class="v1001-kicker">YOUR ADVENTURE BEGINS HERE</span><h1>Choose your character.</h1><p>Create a new 2014-rules hero or return to a character already saved in this browser.</p>${active ? `<div class="v1001-current"><span>Current character</span><b>${esc(active.name)}</b><small>${esc(active.race)} · ${esc(active.className)} · Level ${active.level}</small></div>` : ""}</div><div class="v1001-choice-grid"><button class="v1001-choice new" data-v1001-action="new"><span class="v1001-choice-icon">＋</span><strong>New Character</strong><small>Open the eight-step character builder</small><i>Begin creation →</i></button><button class="v1001-choice load" data-v1001-action="load"><span class="v1001-choice-icon">↗</span><strong>Load Character</strong><small>Open your local character library</small><i>Choose a character →</i></button></div></main>`);
+    const savedDraft = storedBuilderDraft();
+    const draftAction = savedDraft ? "resume-draft" : "new";
+    return launcherFrame(`<main class="v1001-start"><div class="v1001-start-copy"><span class="v1001-kicker">YOUR ADVENTURE BEGINS HERE</span><h1>Choose your character.</h1><p>Create a new 2014-rules hero or return to a character already saved in this browser.</p>${active ? `<div class="v1001-current"><span>Current character</span><b>${esc(active.name)}</b><small>${esc(active.race)} · ${esc(active.className)} · Level ${active.level}</small></div>` : ""}</div><div class="v1001-choice-grid"><button class="v1001-choice new" data-v1001-action="${draftAction}"><span class="v1001-choice-icon">${savedDraft ? "↻" : "＋"}</span><strong>${savedDraft ? "Continue Draft" : "New Character"}</strong><small>${savedDraft ? `${esc(savedDraft.name || "Unnamed hero")} · Step ${savedDraft.step} of ${BUILD_STEPS.length}` : "Open the eight-step character builder"}</small><i>${savedDraft ? "Resume creation" : "Begin creation"} →</i></button><button class="v1001-choice load" data-v1001-action="load"><span class="v1001-choice-icon">↗</span><strong>Load Character</strong><small>Open your local character library</small><i>Choose a character →</i></button></div>${savedDraft ? `<div class="v12-draft-actions"><span>Your confirmed choices and uploaded portrait are saved locally.</span><button type="button" class="v1001-text-btn" data-v1001-action="discard-draft">Discard draft and start over</button></div>` : ""}</main>`);
   }
 
   function displayDate(value) {
@@ -253,6 +298,169 @@
 
   function portraitHtml() {
     return draft.portraitImage ? `<img src="${esc(draft.portraitImage)}" alt="Portrait preview">` : `<span>${esc(initials(draft.name))}</span>`;
+  }
+
+  function definitionArt(kind, definition, size = "card") {
+    const id = definition?.id || slug(definition?.name || kind);
+    const label = definition?.displayName || definition?.name || "Unselected";
+    const token = [...String(id)].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 6;
+    const folder = kind === "race" ? "races" : kind === "class" ? "classes" : "";
+    const image = folder ? `<img data-v12-art src="assets/${folder}/${esc(id)}.webp" alt="${esc(label)}" loading="lazy">` : "";
+    return `<div class="v12-definition-art ${size}" data-kind="${esc(kind)}" data-tone="${token}"><span aria-hidden="true">${esc(initials(label))}</span>${image}</div>`;
+  }
+
+  function candidateRace() {
+    const races = rules.list("races");
+    const raceId = selectionPreview.raceId || draft.build.raceId || races[0]?.id || "";
+    const parent = rules.get("races", raceId);
+    const subraceId = selectionPreview.raceId === raceId
+      ? selectionPreview.subraceId || parent?.subraces?.[0]?.id || ""
+      : draft.build.raceId === raceId
+        ? draft.build.subraceId || parent?.subraces?.[0]?.id || ""
+        : parent?.subraces?.[0]?.id || "";
+    return { raceId, subraceId, parent, definition: stateApi.mergeRace(parent, subraceId) };
+  }
+
+  function candidateBackground() {
+    const backgrounds = rules.list("backgrounds");
+    const id = selectionPreview.backgroundId || draft.build.backgroundId || backgrounds[0]?.id || "";
+    return rules.get("backgrounds", id);
+  }
+
+  function candidateClass() {
+    const classes = rules.list("classes");
+    const id = selectionPreview.classId || draft.build.classId || classes[0]?.id || "";
+    return rules.get("classes", id);
+  }
+
+  function selectionCards(kind, items, candidateId, action) {
+    const query = selectionSearch[kind] || "";
+    const visible = items.filter(item => !query || `${item.name} ${item.source?.book || item.source?.name || ""}`.toLowerCase().includes(query));
+    return `<div class="v12-selection-list">${visible.map(item => `<button type="button" class="v12-selection-card ${item.id === candidateId ? "previewing" : ""} ${item.id === draft.build[`${kind}Id`] ? "confirmed" : ""}" data-v1001-action="${action}" data-id="${esc(item.id)}" data-search="${esc(`${item.name} ${item.source?.book || item.source?.name || ""}`.toLowerCase())}">${definitionArt(kind, item)}<span><b>${esc(item.name)}</b><small>${esc(item.source?.book || item.source?.name || "2014 rules")}</small></span>${item.id === draft.build[`${kind}Id`] ? '<i>CONFIRMED</i>' : item.id === candidateId ? '<i>VIEWING</i>' : ""}</button>`).join("") || '<div class="v1001-empty">No matching options.</div>'}</div>`;
+  }
+
+  function safeResolvedRace(build = draft.build) {
+    if (!build.raceId) return null;
+    try { return stateApi.resolveRace(build, draft.rulesProfile); }
+    catch (error) { return null; }
+  }
+
+  function safeResolvedBackground(build = draft.build) {
+    if (!build.backgroundId) return null;
+    try { return stateApi.resolveBackground(build); }
+    catch (error) { return null; }
+  }
+
+  function safeResolvedClass(build = draft.build, race = safeResolvedRace(build)) {
+    if (!build.classId) return null;
+    try {
+      const abilities = race?.finalAbilities || build.baseAbilities || draft.build.baseAbilities;
+      return stateApi.resolveClass(build, draft.rulesProfile, abilities);
+    } catch (error) { return null; }
+  }
+
+  function automaticSummary(build = draft.build) {
+    const race = safeResolvedRace(build);
+    const background = safeResolvedBackground(build);
+    const classDefinition = safeResolvedClass(build, race);
+    return {
+      race, background, classDefinition,
+      skills: unique([...(race?.skills || []), ...(background?.skills || []), ...(classDefinition?.skills || [])]).map(skillName),
+      proficiencies: unique([
+        ...(race?.armor || []), ...(classDefinition?.armor || []), ...(race?.weapons || []), ...(classDefinition?.weapons || []),
+        ...(race?.tools || []), ...(background?.tools || []), ...(classDefinition?.tools || []), ...(race?.languages || []), ...(background?.languages || []),
+        ...(classDefinition?.savingThrows || []).map(ability => `${ability} Saving Throw`)
+      ]),
+      features: unique([
+        ...(race?.traits || []).map(item => item.name),
+        ...(background?.feature?.name ? [background.feature.name] : []),
+        ...(classDefinition?.features || []).map(item => item.name)
+      ])
+    };
+  }
+
+  function abilityTilesHtml(scores, compact = false) {
+    return `<div class="v12-ability-tiles ${compact ? "compact" : ""}">${ABILITIES.map(key => {
+      const score = Number(scores?.[key] ?? draft.build.baseAbilities[key] ?? 10);
+      const modifier = scoreModifier(score);
+      const tone = modifier > 0 ? "positive" : modifier < 0 ? "negative" : "zero";
+      return `<div><small>${key}</small><b>${score}</b><span class="${tone}">${modifierText(modifier)}</span></div>`;
+    }).join("")}</div>`;
+  }
+
+  function liveSummaryHtml() {
+    const automatic = automaticSummary();
+    const scores = automatic.race?.finalAbilities || draft.build.baseAbilities;
+    const raceName = automatic.race?.name || "Not selected";
+    const backgroundName = automatic.background?.name || "Not selected";
+    const className = automatic.classDefinition?.name || "Not selected";
+    const group = (label, values) => `<div><b>${label}</b><span>${values.length ? esc(values.join(" · ")) : "Nothing added yet"}</span></div>`;
+    return `<aside class="v12-live-summary" aria-label="Live character summary"><span class="v1001-kicker">YOUR CHARACTER</span><div class="v12-summary-portrait">${portraitHtml()}</div><h2 data-v12-summary-name>${esc(draft.name || "New Hero")}</h2><dl><dt>Race</dt><dd>${esc(raceName)}</dd><dt>Background</dt><dd>${esc(backgroundName)}</dd><dt>Class</dt><dd>${esc(className)}</dd></dl><div class="v12-summary-section"><h3>Ability Scores</h3>${abilityTilesHtml(scores, true)}</div><div class="v12-summary-section v12-added"><h3>Added Automatically</h3>${group("Skills", automatic.skills)}${group("Proficiencies", automatic.proficiencies)}${group("Features", automatic.features)}</div></aside>`;
+  }
+
+  function blockedStep(title, message, targetStep) {
+    return `<section class="v1001-wizard-pane v12-blocked"><span class="v1001-kicker">REQUIRED CHOICE</span><h1>${esc(title)}</h1><p>${esc(message)}</p><button type="button" class="v1001-primary" data-v1001-action="jump-step" data-step="${targetStep}">Open required step →</button></section>`;
+  }
+
+  function buildWithCandidate(kind) {
+    const build = clone(draft.build);
+    if (kind === "race") {
+      const candidate = candidateRace();
+      build.raceId = candidate.raceId;
+      build.subraceId = candidate.subraceId;
+      if (build.raceId !== draft.build.raceId || build.subraceId !== draft.build.subraceId) {
+        build.raceChoices = {};
+        build.backgroundChoices = {};
+        build.classChoices = {};
+      }
+    }
+    if (kind === "background") {
+      build.backgroundId = candidateBackground()?.id || "";
+      if (build.backgroundId !== draft.build.backgroundId) {
+        build.backgroundChoices = {};
+        build.classChoices = {};
+      }
+    }
+    if (kind === "class") {
+      build.classId = candidateClass()?.id || "";
+      if (build.classId !== draft.build.classId) {
+        const definition = rules.get("classes", build.classId);
+        build.classChoices = {};
+        build.subclassId = "";
+        build.equipmentPackageId = definition?.equipmentPackages?.[0]?.id || "";
+        build.spellChoices = { cantrips: [], known: [], spellbook: [], prepared: [] };
+      }
+    }
+    return build;
+  }
+
+  function commitSelection(kind) {
+    const nextBuild = buildWithCandidate(kind);
+    if (kind === "class" && (!draft.build.raceId || !draft.build.backgroundId)) {
+      return ["Confirm Race and Background before confirming a Class."];
+    }
+    if (kind === "race" && draft.editing && Number(state.level) > 1 && ((draft.originalRaceId && draft.originalRaceId !== nextBuild.raceId) || draft.originalSubraceId !== nextBuild.subraceId)) {
+      return ["Race or subrace cannot be replaced after level 1. Use Manual rules for custom changes."];
+    }
+    if (kind === "class" && draft.editing && Number(state.level) > 1 && draft.originalClassId && draft.originalClassId !== nextBuild.classId) {
+      return ["Class cannot be replaced after level 1. Use Manual rules for custom changes."];
+    }
+    draft.build = nextBuild;
+    if (kind === "race") selectionPreview.raceId = selectionPreview.subraceId = "";
+    else selectionPreview[`${kind}Id`] = "";
+    confirmationKind = "";
+    saveBuilderDraft();
+    return [];
+  }
+
+  function confirmationStep(kind) {
+    const build = buildWithCandidate(kind);
+    const automatic = automaticSummary(build);
+    const definition = kind === "race" ? automatic.race : kind === "background" ? automatic.background : automatic.classDefinition;
+    if (!definition) return blockedStep("Nothing to confirm", `Choose a ${kind} before opening confirmation.`, kind === "race" ? 3 : kind === "background" ? 5 : 6);
+    const scores = automatic.race?.finalAbilities || build.baseAbilities;
+    const list = (label, values) => `<div><span>${label}</span><b>${values.length ? esc(values.join(" · ")) : "None"}</b></div>`;
+    return `<section class="v1001-wizard-pane v12-confirmation"><div class="v12-confirm-head">${definitionArt(kind, definition, "hero")}<div><span class="v1001-kicker">AWAITING CONFIRMATION</span><h1>Confirm ${esc(definition.name)}</h1><p>This choice will update the live summary and add the following 2014-rules results.</p></div></div><h3>Final Ability Scores</h3>${abilityTilesHtml(scores)}<div class="v12-confirm-results">${list("Skills", automatic.skills)}${list("Proficiencies", automatic.proficiencies)}${list("Features", automatic.features)}</div><div class="v12-confirm-actions"><button type="button" class="v1001-secondary" data-v1001-action="cancel-confirmation">Go Back</button><button type="button" class="v1001-primary" data-v1001-action="confirm-selection" data-kind="${kind}">Confirm ${esc(definition.name)} →</button></div></section>`;
   }
 
   function identityStep() {
@@ -284,9 +492,10 @@
 
   function raceStep() {
     const races = rules.list("races");
-    const parent = rules.get("races", draft.build.raceId);
-    const race = stateApi.mergeRace(parent, draft.build.subraceId);
-    return `<section class="v1001-wizard-pane"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 3 · RACE & SUBRACE</span><h1>Choose your ancestry.</h1><p>Only complete, validated 2014-rules definitions are listed.</p></div><div class="v1001-form-card v1001-definition-card"><div class="v1001-two-fields"><label>Race<select id="v1001Race">${races.map(item => option(item.id, item.name, draft.build.raceId)).join("")}</select></label>${parent?.subraces?.length ? `<label>Subrace<select id="v1001Subrace"><option value="">Choose a subrace</option>${parent.subraces.map(item => option(item.id, item.name, draft.build.subraceId)).join("")}</select></label>` : ""}</div>${raceSummary(race)}${sourceLinksHtml(race)}</div></section>`;
+    const candidate = candidateRace();
+    const race = candidate.definition;
+    const confirmed = candidate.raceId === draft.build.raceId && candidate.subraceId === draft.build.subraceId && Boolean(draft.build.raceId);
+    return `<section class="v1001-wizard-pane"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 3 · RACE & SUBRACE</span><h1>Choose your ancestry.</h1><p>Browse freely. The live summary changes only after confirmation.</p></div><div class="v12-selector-layout"><div class="v12-catalog"><label class="v12-search">Search races<input data-v1001-selection-search="race" type="search" value="${esc(selectionSearch.race)}" placeholder="Search races…"></label>${selectionCards("race", races, candidate.raceId, "preview-race")}</div><div class="v12-selection-detail">${definitionArt("race", race || candidate.parent, "hero")}<div class="v12-detail-heading"><div><span class="v1001-kicker">${confirmed ? "CONFIRMED RACE" : "VIEWING RACE"}</span><h2>${esc(race?.displayName || race?.name || candidate.parent?.name || "Choose a race")}</h2></div>${candidate.parent?.subraces?.length ? `<label>Subrace<select id="v12PreviewSubrace">${candidate.parent.subraces.map(item => option(item.id, item.name, candidate.subraceId)).join("")}</select></label>` : ""}</div>${raceSummary(race)}${sourceLinksHtml(race)}<button type="button" class="v1001-primary v12-choose" data-v1001-action="choose-selection" data-kind="race" ${confirmed ? "disabled" : ""}>${confirmed ? "Race confirmed" : `Choose ${esc(race?.displayName || race?.name || candidate.parent?.name || "race")}`} →</button></div></div></section>`;
   }
 
   function choicesForRace(race) {
@@ -331,6 +540,7 @@
 
   function raceChoicesStep() {
     const race = stateApi.mergeRace(rules.get("races", draft.build.raceId), draft.build.subraceId);
+    if (!race) return blockedStep("Choose a race first", "Race Choices depend on the confirmed race and subrace.", 3);
     const patterns = race?.abilityBonuses?.patterns || [];
     if (patterns.length && !patterns.some(pattern => pattern.id === draft.build.raceChoices["ability-pattern"])) draft.build.raceChoices["ability-pattern"] = patterns[0].id;
     const choices = choicesForRace(race);
@@ -355,10 +565,11 @@
 
   function backgroundStep() {
     const backgrounds = rules.list("backgrounds");
-    const background = rules.get("backgrounds", draft.build.backgroundId);
+    const background = candidateBackground();
+    const confirmed = background?.id === draft.build.backgroundId && Boolean(draft.build.backgroundId);
     const choices = backgroundChoiceDefinitions(background);
     const fixedSkills = (background?.skills?.fixed || []).map(skillName).join(", ") || "Choose below";
-    return `<section class="v1001-wizard-pane"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 5 · BACKGROUND</span><h1>Choose your life before adventuring.</h1><p>Your background automatically grants its Skills, languages, tools, feature, and equipment record.</p></div><div class="v1001-form-card v1001-definition-card"><label>Background<select id="v1001Background">${backgrounds.map(item => option(item.id, item.name, draft.build.backgroundId)).join("")}</select></label>${background ? `<div class="v1001-definition-preview"><div class="v1001-preview-facts"><div><small>SKILLS</small><b>${esc(fixedSkills)}</b></div><div><small>TOOLS</small><b>${esc(background.tools || "None")}</b></div><div><small>LANGUAGES</small><b>${background.languages?.choices ? `Choose ${background.languages.choices.count}` : esc((background.languages?.fixed || []).join(", ") || "None")}</b></div><div><small>FEATURE</small><b>${esc(background.feature?.name || "None")}</b></div></div><p class="v1001-proficiency-line"><b>Starting equipment:</b> ${esc(background.equipment || "See the linked source.")}</p>${sourceLinksHtml(background)}</div>` : ""}</div><div class="v1001-choice-form">${choices.map(choice => renderChoice(choice, "background")).join("")}</div></section>`;
+    return `<section class="v1001-wizard-pane"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 5 · BACKGROUND</span><h1>Choose your life before adventuring.</h1><p>Preview Skills, languages, tools, feature, and equipment before confirmation.</p></div><div class="v12-selector-layout"><div class="v12-catalog"><label class="v12-search">Search backgrounds<input data-v1001-selection-search="background" type="search" value="${esc(selectionSearch.background)}" placeholder="Search backgrounds…"></label>${selectionCards("background", backgrounds, background?.id, "preview-background")}</div><div class="v12-selection-detail">${definitionArt("background", background, "hero")}<div class="v12-detail-heading"><div><span class="v1001-kicker">${confirmed ? "CONFIRMED BACKGROUND" : "VIEWING BACKGROUND"}</span><h2>${esc(background?.name || "Choose a background")}</h2></div></div>${background ? `<div class="v1001-definition-preview"><div class="v1001-preview-facts"><div><small>SKILLS</small><b>${esc(fixedSkills)}</b></div><div><small>TOOLS</small><b>${esc(background.tools || "None")}</b></div><div><small>LANGUAGES</small><b>${background.languages?.choices ? `Choose ${background.languages.choices.count}` : esc((background.languages?.fixed || []).join(", ") || "None")}</b></div><div><small>FEATURE</small><b>${esc(background.feature?.name || "None")}</b></div></div><p class="v1001-proficiency-line"><b>Starting equipment:</b> ${esc(background.equipment || "See the linked source.")}</p>${sourceLinksHtml(background)}</div>` : ""}<button type="button" class="v1001-primary v12-choose" data-v1001-action="choose-selection" data-kind="background" ${confirmed ? "disabled" : ""}>${confirmed ? "Background confirmed" : `Choose ${esc(background?.name || "background")}`} →</button>${confirmed ? `<div class="v1001-choice-form">${choices.map(choice => renderChoice(choice, "background")).join("")}</div>` : ""}</div></div></section>`;
   }
 
   function classSummary(classDefinition) {
@@ -369,8 +580,8 @@
 
   function classChoiceDefinitions(classDefinition) {
     if (!classDefinition) return [];
-    const background = stateApi.resolveBackground(draft.build);
-    const race = stateApi.resolveRace(draft.build, draft.rulesProfile);
+    const background = safeResolvedBackground();
+    const race = safeResolvedRace();
     const occupiedSkills = unique([...(background?.skills || []), ...(race?.skills || [])]);
     const duplicateGrant = classDefinition.proficiencies.skills.options.some(id => occupiedSkills.includes(id));
     const skillPool = duplicateGrant ? SKILLS.map(([id]) => id) : classDefinition.proficiencies.skills.options;
@@ -383,11 +594,13 @@
 
   function classStep() {
     const classes = rules.list("classes");
-    const classDefinition = rules.get("classes", draft.build.classId);
+    const classDefinition = candidateClass();
+    const confirmed = classDefinition?.id === draft.build.classId && Boolean(draft.build.classId);
+    const dependenciesReady = Boolean(draft.build.raceId && draft.build.backgroundId);
     const levelOneSubclasses = rules.list("subclasses").filter(item => item.classId === classDefinition?.id && Number(item.selectionLevel) === 1);
-    if (levelOneSubclasses.length && !levelOneSubclasses.some(item => item.id === draft.build.subclassId)) draft.build.subclassId = levelOneSubclasses[0].id;
-    const subclassChoice = levelOneSubclasses.length ? `<div class="v1001-form-card v1001-definition-card"><label>Level 1 subclass<select id="v1001Subclass">${levelOneSubclasses.map(item => option(item.id, `${item.name} · ${item.source?.book || item.source?.name || "2014 source"}`, draft.build.subclassId)).join("")}</select></label>${sourceLinksHtml(rules.get("subclasses", draft.build.subclassId))}</div>` : "";
-    return `<section class="v1001-wizard-pane"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 6 · CLASS</span><h1>Choose your calling.</h1><p>All 2014-compatible classes include their level 1 rules and verified subclass choices.</p></div><div class="v1001-form-card v1001-definition-card"><label>Class<select id="v1001Class">${classes.map(item => option(item.id, item.name, draft.build.classId)).join("")}</select></label>${classSummary(classDefinition)}${sourceLinksHtml(classDefinition)}</div>${subclassChoice}<div class="v1001-choice-form v1001-class-choices">${classChoiceDefinitions(classDefinition).map(choice => renderChoice(choice, "class")).join("")}</div></section>`;
+    if (confirmed && levelOneSubclasses.length && !levelOneSubclasses.some(item => item.id === draft.build.subclassId)) draft.build.subclassId = levelOneSubclasses[0].id;
+    const subclassChoice = confirmed && levelOneSubclasses.length ? `<div class="v1001-form-card v1001-definition-card"><label>Level 1 subclass<select id="v1001Subclass">${levelOneSubclasses.map(item => option(item.id, `${item.name} · ${item.source?.book || item.source?.name || "2014 source"}`, draft.build.subclassId)).join("")}</select></label>${sourceLinksHtml(rules.get("subclasses", draft.build.subclassId))}</div>` : "";
+    return `<section class="v1001-wizard-pane"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 6 · CLASS</span><h1>Choose your calling.</h1><p>Browse level 1 rules freely. Confirming is the only action that changes the live summary.</p></div><div class="v12-selector-layout"><div class="v12-catalog"><label class="v12-search">Search classes<input data-v1001-selection-search="class" type="search" value="${esc(selectionSearch.class)}" placeholder="Search classes…"></label>${selectionCards("class", classes, classDefinition?.id, "preview-class")}</div><div class="v12-selection-detail">${definitionArt("class", classDefinition, "hero")}<div class="v12-detail-heading"><div><span class="v1001-kicker">${confirmed ? "CONFIRMED CLASS" : "VIEWING CLASS"}</span><h2>${esc(classDefinition?.name || "Choose a class")}</h2></div></div>${classSummary(classDefinition)}${sourceLinksHtml(classDefinition)}${!dependenciesReady ? '<div class="v1001-rule-note v12-dependency-note"><b>Confirm Race and Background first</b><span>You can browse every class now, but those choices determine which class Skills are still available.</span></div>' : ""}<button type="button" class="v1001-primary v12-choose" data-v1001-action="choose-selection" data-kind="class" ${confirmed || !dependenciesReady ? "disabled" : ""}>${confirmed ? "Class confirmed" : !dependenciesReady ? "Complete required choices" : `Choose ${esc(classDefinition?.name || "class")}`} →</button>${subclassChoice}${confirmed ? `<div class="v1001-choice-form v1001-class-choices">${classChoiceDefinitions(classDefinition).map(choice => renderChoice(choice, "class")).join("")}</div>` : ""}</div></div></section>`;
   }
 
   function spellcastingSummary(spellcasting) {
@@ -407,7 +620,7 @@
   function initialSpellRequirements(classDefinition) {
     const casting = classDefinition?.spellcasting;
     if (!casting || casting.startsAt > 1) return [];
-    const modifier = scoreModifier(stateApi.resolveRace(draft.build, draft.rulesProfile)?.finalAbilities?.[casting.ability] || 10);
+    const modifier = scoreModifier(safeResolvedRace()?.finalAbilities?.[casting.ability] || draft.build.baseAbilities?.[casting.ability] || 10);
     const requirements = [];
     if (casting.cantripsKnown) requirements.push({ id: "cantrips", label: "Starting cantrips", level: 0, count: Number(casting.cantripsKnown), help: "Cantrips do not use spell slots." });
     if (casting.kind === "known") requirements.push({ id: "known", label: "Starting spells known", level: 1, count: Number(casting.spellsKnown || 0), help: "These are the level 1 spells your character knows." });
@@ -435,7 +648,7 @@
 
   function equipmentStep() {
     const classDefinition = rules.get("classes", draft.build.classId);
-    if (!classDefinition) return "";
+    if (!classDefinition) return blockedStep("Choose a class first", "Equipment and spellcasting depend on the confirmed class.", 6);
     return `<section class="v1001-wizard-pane"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 7 · EQUIPMENT & SPELLCASTING</span><h1>Prepare for the road.</h1><p>Select a complete starting package. Every item shown will be added to inventory.</p></div><div class="v1001-equipment-list">${classDefinition.equipmentPackages.map(packageDefinition => `<label class="v1001-equipment-option ${packageDefinition.id === draft.build.equipmentPackageId ? "selected" : ""}"><input type="radio" name="v1001Equipment" value="${esc(packageDefinition.id)}" ${packageDefinition.id === draft.build.equipmentPackageId ? "checked" : ""}><span><b>${esc(packageDefinition.name)}</b><small>${esc(packageDefinition.items.map(item => `${item.qty > 1 ? `${item.qty}× ` : ""}${item.name}`).join(" · "))}</small></span></label>`).join("")}</div>${spellcastingSummary(classDefinition.spellcasting)}${initialSpellChoicesHtml(classDefinition)}<div class="v1001-definition-preview compact"><div class="v1001-preview-facts"><div><small>ARMOR PROFICIENCIES</small><b>${esc(classDefinition.proficiencies.armor.join(", ") || "None")}</b></div><div><small>WEAPON PROFICIENCIES</small><b>${esc(classDefinition.proficiencies.weapons.join(", "))}</b></div><div><small>TOOL PROFICIENCIES</small><b>${esc(classDefinition.proficiencies.tools.fixed.join(", ") || "From choices, if any")}</b></div></div></div></section>`;
   }
 
@@ -514,8 +727,8 @@
   }
 
   function reviewStep() {
-    const { race, background, classDefinition } = reviewData();
-    if (!race || !background || !classDefinition) return "";
+    const { race, background, classDefinition } = automaticSummary();
+    if (!race || !background || !classDefinition) return blockedStep("Complete the required choices", "Review requires a confirmed race, background, and class.", !race ? 3 : !background ? 5 : 6);
     const selectedSubclass = rules.get("subclasses", draft.build.subclassId);
     const subclassRules = subclassLevelOneRules(selectedSubclass);
     const hpBonus = [...race.traits, ...classDefinition.features].reduce((sum, item) => sum + Number(item.mechanics?.hpPerLevel || 0), 0) + subclassRules.hpPerLevel;
@@ -526,15 +739,37 @@
     const racialChoices = choiceSummary(choicesForRace(race.definition), draft.build.raceChoices);
     const classChoices = choiceSummary(classChoiceDefinitions(classDefinition.definition), draft.build.classChoices);
     const selectedSpells = Object.values(draft.build.spellChoices || {}).flat().map(id => rules.get("spells", id)?.name).filter(Boolean);
-    return `<section class="v1001-wizard-pane review"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 8 · REVIEW</span><h1>${draft.editing ? "Review your changes." : "Your character is ready."}</h1><p>Everything listed below will be written to the character record.</p></div><div class="v1001-review-grid"><section class="v1001-review-identity"><div class="v1001-review-portrait">${portraitHtml()}</div><div><small>${draft.editing ? "EDITING CHARACTER" : "NEW CHARACTER"}</small><h2>${esc(draft.name)}</h2><p>${esc(race.name)} · ${esc(background.name)} · ${esc(classDefinition.name)} · Level 1</p><span>${draft.rulesProfile.mode === "manual" ? "2014 rules with manual overrides" : "Standard 2014 rules"}</span></div></section><section class="v1001-review-abilities">${ABILITIES.map(key => `<div><small>${key}</small><b>${race.finalAbilities[key]}</b><span>${signed(scoreModifier(race.finalAbilities[key]))}</span></div>`).join("")}</section><section class="v1001-review-rules"><div><small>VITALS</small><b>${esc(race.size)} · ${race.speed} ft. · AC ${armorClass} · d${classDefinition.hitDie} · ${hp} HP</b></div><div><small>SENSES & LANGUAGES</small><b>${race.senses.darkvision ? `Darkvision ${race.senses.darkvision} ft. · ` : ""}${esc(unique([...race.languages, ...background.languages]).join(" · "))}</b></div><div><small>SAVING THROWS</small><b>${classDefinition.savingThrows.join(" · ")}</b></div><div><small>SKILLS</small><b>${esc(unique([...race.skills, ...background.skills, ...classDefinition.skills]).map(skillName).join(" · ") || "None")}</b></div><div><small>PROFICIENCIES</small><b>${esc(unique([...race.armor, ...classDefinition.armor, ...race.weapons, ...classDefinition.weapons, ...race.tools, ...background.tools, ...classDefinition.tools]).join(" · ") || "None")}</b></div><div><small>BACKGROUND</small><b>${esc(background.name)} · ${esc(background.feature?.name || "No feature")} · ${esc(background.equipment || "No listed equipment")}</b></div>${racialChoices ? `<div><small>RACE CHOICES</small><b>${esc(racialChoices)}</b></div>` : ""}${classChoices ? `<div><small>CLASS CHOICES</small><b>${esc(classChoices)}</b></div>` : ""}<div><small>RACIAL TRAITS</small><b>${esc(race.traits.map(item => item.name).join(" · "))}</b></div><div><small>LEVEL 1 CLASS FEATURES</small><b>${esc(classDefinition.features.map(item => item.name).join(" · "))}</b></div><div><small>STARTING EQUIPMENT</small><b>${esc(classDefinition.equipmentPackage.items.map(item => `${item.qty > 1 ? `${item.qty}× ` : ""}${item.name}`).join(" · "))}</b></div><div><small>SPELLCASTING</small><b>${spellcasting ? `${spellcasting.startsAt === 1 ? "Active" : `Begins level ${spellcasting.startsAt}`} · ${spellcasting.ability}${selectedSpells.length ? ` · ${selectedSpells.join(" · ")}` : ""}` : "None"}</b></div><div><small>SUBCLASS PATH</small><b>${selectedSubclass ? `${esc(selectedSubclass.name)} selected at Level 1` : `Choose at Level ${classDefinition.subclass.selectionLevel}`}</b></div></section>${manualOverridesHtmlV2()}</div></section>`;
+    const row = (label, value, step) => `<div class="v12-review-row"><span>${label}</span><b>${esc(value || "None")}</b><button type="button" data-v1001-action="jump-step" data-step="${step}">Edit</button></div>`;
+    const skills = unique([...race.skills, ...background.skills, ...classDefinition.skills]).map(skillName).join(" · ");
+    const proficiencies = unique([...race.armor, ...classDefinition.armor, ...race.weapons, ...classDefinition.weapons, ...race.tools, ...background.tools, ...classDefinition.tools]).join(" · ");
+    const features = unique([...race.traits.map(item => item.name), background.feature?.name, ...classDefinition.features.map(item => item.name)]).join(" · ");
+    const equipment = classDefinition.equipmentPackage.items.map(item => `${item.qty > 1 ? `${item.qty}× ` : ""}${item.name}`).join(" · ");
+    return `<section class="v1001-wizard-pane review"><div class="v1001-pane-copy"><span class="v1001-kicker">STEP 8 · REVIEW</span><h1>${draft.editing ? "Review your changes." : "Review your character."}</h1><p>Everything below will be written to the character record.</p></div><div class="v12-review-ready">✓ All required choices complete</div><section class="v1001-review-identity"><div class="v1001-review-portrait">${portraitHtml()}</div><div><small>${draft.editing ? "EDITING CHARACTER" : "NEW CHARACTER"}</small><h2>${esc(draft.name)}</h2><p>${esc(race.name)} · ${esc(background.name)} · ${esc(classDefinition.name)} · Level 1</p><span>${draft.rulesProfile.mode === "manual" ? "2014 rules with manual overrides" : "Standard 2014 rules"}</span></div></section>${abilityTilesHtml(race.finalAbilities)}<div class="v12-review-list">${row("IDENTITY", draft.name, 1)}${row("RACE", race.name, 3)}${row("BACKGROUND", background.name, 5)}${row("CLASS", `${classDefinition.name}${selectedSubclass ? ` · ${selectedSubclass.name}` : ""} · Level 1`, 6)}${row("VITALS", `${race.size} · ${race.speed} ft. · AC ${armorClass} · d${classDefinition.hitDie} · ${hp} HP`, 7)}${row("SKILLS", skills, 6)}${row("PROFICIENCIES", proficiencies, 6)}${row("FEATURES", features, 6)}${row("STARTING EQUIPMENT", equipment, 7)}${row("SPELLCASTING", spellcasting ? `${spellcasting.startsAt === 1 ? "Active" : `Begins level ${spellcasting.startsAt}`} · ${spellcasting.ability}${selectedSpells.length ? ` · ${selectedSpells.join(" · ")}` : ""}` : "None", 7)}${racialChoices ? row("RACE CHOICES", racialChoices, 4) : ""}${classChoices ? row("CLASS CHOICES", classChoices, 6) : ""}</div>${manualOverridesHtmlV2()}</section>`;
   }
 
   function wizardStep() {
+    if (confirmationKind) return confirmationStep(confirmationKind);
     return [identityStep, abilitiesStep, raceStep, raceChoicesStep, backgroundStep, classStep, equipmentStep, reviewStep][draft.step - 1]();
   }
 
+  function stepComplete(step) {
+    if (step === 1) return Boolean(draft.name.trim());
+    if (step === 2) return ABILITIES.every(key => Number(draft.build.baseAbilities[key]) >= 1 && Number(draft.build.baseAbilities[key]) <= 20);
+    if (step === 3) return Boolean(draft.build.raceId);
+    if (step === 4) return Boolean(draft.build.raceId) && validateRaceOnly().length === 0;
+    if (step === 5) return Boolean(draft.build.backgroundId) && validateBackgroundOnly().length === 0;
+    if (step === 6) return Boolean(draft.build.classId) && validateClassOnly(false).length === 0;
+    if (step === 7) return Boolean(draft.build.classId) && validateClassOnly(true).length === 0;
+    return Boolean(draft.build.raceId && draft.build.backgroundId && draft.build.classId) && stateApi.validateBuild(draft.build).length === 0;
+  }
+
   function newHtml() {
-    return launcherFrame(`<main class="v1001-wizard"><aside><span class="v1001-kicker">${draft.editing ? "EDIT CHARACTER" : "NEW CHARACTER"}</span><h2>Character Creation</h2><ol>${BUILD_STEPS.map(([label, description], index) => `<li class="${draft.step === index + 1 ? "active" : draft.step > index + 1 ? "done" : ""}"><span>${draft.step > index + 1 ? "✓" : index + 1}</span><div><b>${label}</b><small>${description}</small></div></li>`).join("")}</ol><div class="v1001-progress"><span style="width:${draft.step / BUILD_STEPS.length * 100}%"></span></div><small>${draft.step} of ${BUILD_STEPS.length} steps</small></aside><div class="v1001-wizard-main">${wizardStep()}<div class="v1001-wizard-errors" id="v1001Errors" hidden></div><nav><button class="v1001-secondary" data-v1001-action="${draft.step === 1 ? (draft.editing ? "close" : "start") : "previous"}">${draft.step === 1 ? "Cancel" : "← Back"}</button><button class="v1001-primary" data-v1001-action="${draft.step === BUILD_STEPS.length ? "create" : "next"}">${draft.step === BUILD_STEPS.length ? (draft.editing ? "Apply Changes" : "Create Character") : "Continue →"}</button></nav></div></main>`, { close: true });
+    const steps = BUILD_STEPS.map(([label, description], index) => {
+      const number = index + 1;
+      const complete = stepComplete(number);
+      return `<li class="${draft.step === number ? "active" : complete ? "done" : ""}"><button type="button" data-v1001-action="jump-step" data-step="${number}"><span>${complete ? "✓" : number}</span><div><b>${label}</b><small>${description}</small></div></button></li>`;
+    }).join("");
+    return launcherFrame(`<main class="v1001-wizard v12-wizard"><div class="v12-wizard-body"><aside><span class="v1001-kicker">${draft.editing ? "EDIT CHARACTER" : "NEW CHARACTER"}</span><h2>Character Creation</h2><ol>${steps}</ol><div class="v1001-progress"><span style="width:${draft.step / BUILD_STEPS.length * 100}%"></span></div><small>${draft.step} of ${BUILD_STEPS.length} steps</small></aside><div class="v1001-wizard-main"><div class="v1001-wizard-errors" id="v1001Errors" hidden></div>${wizardStep()}</div>${liveSummaryHtml()}</div><nav class="v12-wizard-footer"><button class="v1001-secondary" data-v1001-action="${confirmationKind ? "cancel-confirmation" : draft.step === 1 ? (draft.editing ? "close" : "start") : "previous"}">${confirmationKind ? "← Back to selection" : draft.step === 1 ? "Cancel" : "← Back"}</button><span>Step ${draft.step} of ${BUILD_STEPS.length} · Saved locally</span><button class="v1001-primary" data-v1001-action="${draft.step === BUILD_STEPS.length ? "create" : "next"}" ${confirmationKind ? "disabled" : ""}>${draft.step === BUILD_STEPS.length ? (draft.editing ? "Apply Changes" : "Create Character") : "Continue →"}</button></nav></main>`, { close: true });
   }
 
   function renderLauncher() {
@@ -544,19 +779,31 @@
     document.body.classList.add("v1001-launcher-open");
   }
 
+  function refreshLiveSummary() {
+    const summary = launcher().querySelector(".v12-live-summary");
+    if (summary) summary.outerHTML = liveSummaryHtml();
+  }
+
   function openLauncher(view = "start") {
     currentView = view;
+    resetTransientBuilderState();
     if (view === "new") draft = defaultDraft();
     renderLauncher();
   }
 
   function openEditor() {
     currentView = "new";
+    resetTransientBuilderState();
     draft = draftFromState();
+    saveBuilderDraft();
     renderLauncher();
   }
 
   function closeLauncher() {
+    if (currentView === "new") {
+      readVisibleDraft();
+      saveBuilderDraft();
+    }
     launcher().classList.remove("open");
     document.body.classList.remove("v1001-launcher-open");
   }
@@ -742,9 +989,25 @@
   function showErrors(errors) {
     const box = document.getElementById("v1001Errors");
     if (!box) return;
+    launcher().querySelectorAll(".v12-invalid").forEach(element => element.classList.remove("v12-invalid"));
+    launcher().querySelectorAll(".v12-field-error").forEach(element => element.remove());
     box.hidden = !errors.length;
     box.innerHTML = errors.map(error => `<span>${esc(error)}</span>`).join("");
-    if (errors.length) box.scrollIntoView({ block: "nearest" });
+    if (!errors.length) return;
+    if (errors.some(error => /character name/i.test(error))) {
+      const input = document.getElementById("v1001Name");
+      if (input) {
+        input.classList.add("v12-invalid");
+        input.insertAdjacentHTML("afterend", '<small class="v12-field-error">Please enter a character name.</small>');
+        input.focus();
+      }
+    }
+    launcher().querySelectorAll("[data-v1001-choice-scope]").forEach(input => {
+      if (input.value) return;
+      input.classList.add("v12-invalid");
+      if (!input.nextElementSibling?.classList.contains("v12-field-error")) input.insertAdjacentHTML("afterend", '<small class="v12-field-error">This choice is required.</small>');
+    });
+    box.scrollIntoView({ block: "nearest" });
   }
 
   function generatedTrait(item, category, sourceName, prefix) {
@@ -927,6 +1190,7 @@
     save();
     navigateToPage("home");
     closeLauncher();
+    clearBuilderDraft();
     toast(editing ? "Character rules updated" : `${state.race} ${state.className} created`);
   }
 
@@ -987,6 +1251,7 @@
     const raceKeys = ["size", "speed", "senses", "abilityBonuses", "languages", "skills", "armorProficiencies", "weaponProficiencies", "toolProficiencies", "addTraits", "removeTraits"];
     const classKeys = ["hitDie", "hp", "savingThrows", "classSkills", "classArmorProficiencies", "classWeaponProficiencies", "classToolProficiencies", "spellcasting", "addFeatures", "removeFeatures", "addResources", "removeResources"];
     for (const key of group === "race" ? raceKeys : classKeys) delete overrides[key];
+    saveBuilderDraft();
     renderLauncher();
   }
 
@@ -1017,9 +1282,20 @@
     const button = event.target.closest("[data-v1001-action]");
     if (!button) return;
     const action = button.dataset.v1001Action;
-    if (action === "characters" || action === "start") return openLauncher("start");
+    if (action === "characters") return openLauncher("start");
+    if (action === "start") {
+      if (currentView === "new") { readVisibleDraft(); saveBuilderDraft(); }
+      return openLauncher("start");
+    }
     if (action === "load") return openLauncher("load");
-    if (action === "new") { draft = defaultDraft(); currentView = "new"; return renderLauncher(); }
+    if (action === "new") { clearBuilderDraft(); resetTransientBuilderState(); draft = defaultDraft(); currentView = "new"; saveBuilderDraft(); return renderLauncher(); }
+    if (action === "resume-draft") {
+      resetTransientBuilderState();
+      draft = storedBuilderDraft() || defaultDraft();
+      currentView = "new";
+      return renderLauncher();
+    }
+    if (action === "discard-draft") { clearBuilderDraft(); resetTransientBuilderState(); draft = defaultDraft(); currentView = "new"; saveBuilderDraft(); return renderLauncher(); }
     if (action === "close") return closeLauncher();
     if (action === "activate") {
       const library = ensureLibrary();
@@ -1028,25 +1304,65 @@
     }
     if (action === "import") return document.getElementById("v1001Import")?.click();
     if (action === "import-content-pack") return rules.homebrew?.pickAndImport();
-    if (action === "previous") { readVisibleDraft(); draft.step = Math.max(1, draft.step - 1); return renderLauncher(); }
+    if (action === "jump-step") {
+      readVisibleDraft();
+      confirmationKind = "";
+      draft.step = Math.max(1, Math.min(BUILD_STEPS.length, Number(button.dataset.step) || 1));
+      saveBuilderDraft();
+      return renderLauncher();
+    }
+    if (action === "preview-race") {
+      const definition = rules.get("races", button.dataset.id);
+      selectionPreview.raceId = definition?.id || "";
+      selectionPreview.subraceId = definition?.subraces?.find(item => item.id === draft.build.subraceId)?.id || definition?.subraces?.[0]?.id || "";
+      confirmationKind = "";
+      return renderLauncher();
+    }
+    if (action === "preview-background") { selectionPreview.backgroundId = button.dataset.id || ""; confirmationKind = ""; return renderLauncher(); }
+    if (action === "preview-class") { selectionPreview.classId = button.dataset.id || ""; confirmationKind = ""; return renderLauncher(); }
+    if (action === "choose-selection") { confirmationKind = button.dataset.kind || ""; return renderLauncher(); }
+    if (action === "cancel-confirmation") { confirmationKind = ""; return renderLauncher(); }
+    if (action === "confirm-selection") {
+      const errors = commitSelection(button.dataset.kind);
+      if (errors.length) return showErrors(errors);
+      return renderLauncher();
+    }
+    if (action === "previous") { readVisibleDraft(); draft.step = Math.max(1, draft.step - 1); saveBuilderDraft(); return renderLauncher(); }
     if (action === "next") {
       const errors = stepErrors();
       if (errors.length) return showErrors(errors);
       draft.step = Math.min(BUILD_STEPS.length, draft.step + 1);
+      saveBuilderDraft();
       return renderLauncher();
     }
     if (action === "create") return createOrUpdateCharacter();
-    if (action === "reset-all-overrides") { draft.rulesProfile.overrides = {}; return renderLauncher(); }
-    if (action === "reset-one-override") { readManualOverrides(); deleteOverridePath(button.dataset.path); return renderLauncher(); }
+    if (action === "reset-all-overrides") { draft.rulesProfile.overrides = {}; saveBuilderDraft(); return renderLauncher(); }
+    if (action === "reset-one-override") { readManualOverrides(); deleteOverridePath(button.dataset.path); saveBuilderDraft(); return renderLauncher(); }
     if (action === "reset-override") return resetOverrideGroup(button.dataset.group);
   }, true);
 
   document.addEventListener("input", event => {
-    if (event.target.id === "v1001Name") draft.name = event.target.value;
+    if (event.target.id === "v1001Name") {
+      draft.name = event.target.value;
+      const summaryName = launcher().querySelector("[data-v12-summary-name]");
+      if (summaryName) summaryName.textContent = draft.name || "New Hero";
+      showErrors([]);
+      saveBuilderDraft();
+    }
     if (event.target.matches("[data-v1001-base]")) {
       draft.build.baseAbilities[event.target.dataset.v1001Base] = Math.max(1, Math.min(20, Number(event.target.value) || 10));
+      const display = event.target.parentElement?.querySelector("b");
+      if (display) display.textContent = String(draft.build.baseAbilities[event.target.dataset.v1001Base]);
+      refreshLiveSummary();
+      saveBuilderDraft();
     }
-    if (event.target.matches("[data-v1001-choice-scope]")) readChoiceInputs();
+    if (event.target.matches("[data-v1001-choice-scope]")) { readChoiceInputs(); refreshLiveSummary(); saveBuilderDraft(); }
+    if (event.target.matches("[data-v1001-selection-search]")) {
+      const kind = event.target.dataset.v1001SelectionSearch;
+      const query = event.target.value.trim().toLowerCase();
+      selectionSearch[kind] = query;
+      event.target.closest(".v12-catalog")?.querySelectorAll(".v12-selection-card").forEach(card => { card.hidden = Boolean(query) && !card.dataset.search.includes(query); });
+    }
     if (event.target.matches("[data-v1001-spell-search]")) {
       const kind = event.target.dataset.v1001SpellSearch;
       const query = event.target.value.trim().toLowerCase();
@@ -1056,26 +1372,30 @@
 
   document.addEventListener("change", async event => {
     if (event.target.id === "v1001Portrait" && event.target.files?.[0]) {
-      try { draft.portraitImage = await compressPortrait(event.target.files[0]); renderLauncher(); }
+      try { draft.portraitImage = await compressPortrait(event.target.files[0]); saveBuilderDraft(); renderLauncher(); }
       catch (error) { toast("That portrait could not be loaded"); }
       return;
     }
+    if (event.target.id === "v12PreviewSubrace") { selectionPreview.subraceId = event.target.value; confirmationKind = ""; return renderLauncher(); }
     if (event.target.id === "v1001Race") {
       draft.build.raceId = event.target.value;
       const race = rules.get("races", draft.build.raceId);
       draft.build.subraceId = race?.subraces?.[0]?.id || "";
       draft.build.raceChoices = {};
+      saveBuilderDraft();
       return renderLauncher();
     }
-    if (event.target.id === "v1001Subrace") { draft.build.subraceId = event.target.value; draft.build.raceChoices = {}; return renderLauncher(); }
+    if (event.target.id === "v1001Subrace") { draft.build.subraceId = event.target.value; draft.build.raceChoices = {}; saveBuilderDraft(); return renderLauncher(); }
     if (event.target.id === "v1001AbilityPattern") {
       draft.build.raceChoices = { "ability-pattern": event.target.value };
+      saveBuilderDraft();
       return renderLauncher();
     }
     if (event.target.id === "v1001Background") {
       draft.build.backgroundId = event.target.value;
       draft.build.backgroundChoices = {};
       draft.build.classChoices = {};
+      saveBuilderDraft();
       return renderLauncher();
     }
     if (event.target.id === "v1001Class") {
@@ -1085,28 +1405,36 @@
       draft.build.subclassId = "";
       draft.build.spellChoices = { cantrips: [], known: [], spellbook: [], prepared: [] };
       draft.build.equipmentPackageId = classDefinition?.equipmentPackages?.[0]?.id || "";
+      saveBuilderDraft();
       return renderLauncher();
     }
-    if (event.target.id === "v1001Subclass") { draft.build.subclassId = event.target.value; return renderLauncher(); }
-    if (event.target.name === "v1001Equipment") { draft.build.equipmentPackageId = event.target.value; return renderLauncher(); }
+    if (event.target.id === "v1001Subclass") { draft.build.subclassId = event.target.value; saveBuilderDraft(); return renderLauncher(); }
+    if (event.target.name === "v1001Equipment") { draft.build.equipmentPackageId = event.target.value; saveBuilderDraft(); return renderLauncher(); }
     if (event.target.matches("[data-v1001-spell-kind]")) {
       readChoiceInputs();
       const kind = event.target.dataset.v1001SpellKind;
       const output = document.querySelector(`[data-v1001-spell-count="${CSS.escape(kind)}"]`);
       if (output) output.textContent = String(draft.build.spellChoices[kind]?.length || 0);
+      saveBuilderDraft();
       return;
     }
-    if (event.target.name === "v1001RulesMode") { readManualOverrides(); draft.rulesProfile.mode = event.target.value === "manual" ? "manual" : "standard"; return renderLauncher(); }
+    if (event.target.name === "v1001RulesMode") { readManualOverrides(); draft.rulesProfile.mode = event.target.value === "manual" ? "manual" : "standard"; saveBuilderDraft(); return renderLauncher(); }
     if (event.target.matches("[data-v1001-choice-scope]")) {
       readChoiceInputs();
+      saveBuilderDraft();
       if (event.target.dataset.v1001ChoiceId === "class-skills" && rules.get("classes", draft.build.classId)?.choices?.some(choice => ["class-selected", "rogue-expertise"].includes(choice.options))) return renderLauncher();
     }
     if (event.target.id?.startsWith("v1001Manual") || event.target.matches("[data-v1001-manual-ability]")) {
       readManualOverrides();
+      saveBuilderDraft();
       return renderLauncher();
     }
     if (event.target.id === "v1001Import" && event.target.files?.[0]) await importCharacter(event.target.files[0]);
   });
+
+  document.addEventListener("error", event => {
+    if (event.target.matches?.("img[data-v12-art]")) event.target.hidden = true;
+  }, true);
 
   hub.builder = { open: () => openLauncher("new"), edit: openEditor, validate: stateApi.validateBuild };
   openLauncher("start");
